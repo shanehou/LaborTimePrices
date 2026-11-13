@@ -1,0 +1,13 @@
+name = "ltp-prices"
+main = "index.js"
+compatibility_date = "2026-11-13"
+
+# GET https://ltp.melkor.me/prices.json reads the R2 object. The rest of the
+# hostname stays on the Cloudflare Pages project.
+routes = [
+  { pattern = "ltp.melkor.me/prices.json", zone_name = "melkor.me" }
+]
+
+[[r2_buckets]]
+binding = "PRICES"
+bucket_name = "labor-time-prices"
