@@ -1,0 +1,10 @@
+{
+  "name": "ltp-prices-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx wrangler dev --ip 127.0.0.1 --port 8787",
+    "deploy": "npx wrangler deploy",
+    "test": "node --test test/*.test.js"
+  }
+}

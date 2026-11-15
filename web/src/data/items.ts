@@ -1,11 +1,15 @@
+/**
+ * Exact Numbeo item names. The Worker parses Numbeo's HTML with these strings,
+ * so they must not be translated here.
+ */
 export const ITEMS = {
-  coffee: "Cappuccino",
-  rentOutside: "1 Bedroom Apartment Outside Centre",
+  coffee: "Cappuccino (Regular Size)",
+  rentOutside: "1 Bedroom Apartment Outside of City Centre",
   rentCentre: "1 Bedroom Apartment in City Centre",
-  utilities: "Basic Utilities",
-  internet: "Internet",
-  transit: "Monthly Public Transport Pass",
-  school: "International School, Yearly",
+  utilities: "Basic Utilities for 85 m2 Apartment (Electricity, Heating, Cooling, Water, Garbage)",
+  internet: "Broadband Internet (Unlimited Data, 60 Mbps or Higher)",
+  transit: "Monthly Public Transport Pass (Regular Price)",
+  school: "International Primary School, Annual Tuition per Child",
 } as const
 
 export const BASKETS = [

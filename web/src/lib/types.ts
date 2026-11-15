@@ -4,18 +4,21 @@ export type CityPrice = {
   price_usd: number
 }
 
-export type CityRecord = {
+export type CatalogCity = {
   id: string
   name: string
   country: string
+}
+
+export type CityRecord = CatalogCity & {
   monthly_net_salary: number | null
   monthly_work_hours?: number
   prices: CityPrice[]
+  scraped_at?: string
+  source_url?: string
 }
 
-export type PriceDataset = {
-  cities: CityRecord[]
-}
+export type CityLoadStatus = "loading" | "ready" | "error"
 
 export type BasketLine = {
   item: string

@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   exclusionMessage,
   labelCountry,
@@ -22,15 +21,11 @@ import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
 import { rankCities } from "@/lib/labor"
 import type { BasketLine, CityRecord } from "@/lib/types"
 
-export type RankScope = "selected" | "all"
-
 type RankingProps = {
   lang: Lang
   target: string
   onTarget: (target: string) => void
-  scope: RankScope
-  onScope: (scope: RankScope) => void
-  pool: CityRecord[]
+  cities: CityRecord[]
   lines: BasketLine[]
   customEmpty: boolean
   overrides: Record<string, number>
@@ -47,9 +42,7 @@ export function Ranking({
   lang,
   target,
   onTarget,
-  scope,
-  onScope,
-  pool,
+  cities,
   lines,
   customEmpty,
   overrides,
@@ -63,32 +56,25 @@ export function Ranking({
         : target === "basket:monthly-living"
           ? presetCopy["monthly-living"].hint
           : null
-  const result = customEmpty || lines.length === 0 ? null : rankCities(pool, lines, overrides)
+  const result =
+    customEmpty || lines.length === 0 ? null : rankCities(cities, lines, overrides)
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h2 className="font-heading text-2xl">{t(lang, "rankTitle")}</h2>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={scope}
-          aria-label={t(lang, "scopeLabel")}
-          onValueChange={(value) => {
-            if (value === "selected" || value === "all") onScope(value)
-          }}
-        >
-          <ToggleGroupItem value="selected">{t(lang, "rankScopeSelected")}</ToggleGroupItem>
-          <ToggleGroupItem value="all">{t(lang, "rankScopeAll")}</ToggleGroupItem>
-        </ToggleGroup>
       </div>
       <div className="max-w-xl">
         <Label htmlFor="rank-target" className="mb-2 block">
           {t(lang, "rankTargetLabel")}
         </Label>
-        <Select value={target} onValueChange={onTarget}>
+        <Select
+          value={items.length > 0 ? target : ""}
+          onValueChange={onTarget}
+          disabled={items.length === 0}
+        >
           <SelectTrigger id="rank-target" className="w-full bg-card">
-            <SelectValue />
+            <SelectValue placeholder={t(lang, "rankTargetLabel")} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
@@ -112,7 +98,7 @@ export function Ranking({
         </Select>
         {hintKey && <p className="mt-2 text-sm text-muted-foreground">{t(lang, hintKey)}</p>}
       </div>
-      {pool.length === 0 ? (
+      {cities.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t(lang, "rankEmptySelection")}</p>
       ) : customEmpty ? (
         <p className="text-sm text-muted-foreground">{t(lang, "basketEmpty")}</p>

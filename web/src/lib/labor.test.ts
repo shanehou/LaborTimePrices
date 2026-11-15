@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import { ITEMS } from "../data/items"
-import { mockPrices } from "../data/mockPrices"
 import {
   DEFAULT_MONTHLY_HOURS,
   evaluateBasket,
@@ -94,21 +93,6 @@ describe("labor hours", () => {
     expect(result.hours).toBeCloseTo(yearly / hourly)
     expect(result.hours).not.toBeCloseTo(yearly / 12 / hourly)
     expect(result.hours).toBeGreaterThan((yearly / 12 / hourly) * 10)
-  })
-
-  it("uses the mock school's listed yearly price as-is", () => {
-    const shanghai = mockPrices.cities.find((entry) => entry.id === "shanghai")
-    expect(shanghai).toBeDefined()
-    if (!shanghai || shanghai.monthly_net_salary === null) return
-    const school = shanghai.prices.find((price) => price.item === ITEMS.school)
-    expect(school).toBeDefined()
-    if (!school) return
-    const result = evaluateBasket(shanghai, [{ item: ITEMS.school, quantity: 1 }])
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    const hourly = shanghai.monthly_net_salary / DEFAULT_MONTHLY_HOURS
-    expect(result.hours).toBeCloseTo(school.price_usd / hourly)
-    expect(result.totalUsd).toBe(school.price_usd)
   })
 
   it("sums a basket as price times quantity, then divides by the hourly wage", () => {

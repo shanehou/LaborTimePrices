@@ -21,6 +21,12 @@ export function formatPlain(lang: Lang, value: number, digits: number): string {
   }).format(value)
 }
 
+export function formatDate(lang: Lang, iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return new Intl.DateTimeFormat(locale(lang), { dateStyle: "medium" }).format(date)
+}
+
 export function formatLaborHours(lang: Lang, hours: number): string {
   const hourDigits = hours < 10 ? 2 : 1
   const hoursText = formatPlain(lang, hours, hourDigits)

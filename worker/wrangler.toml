@@ -2,12 +2,15 @@ name = "ltp-prices"
 main = "index.js"
 compatibility_date = "2026-11-13"
 
-# GET https://ltp.melkor.me/prices.json reads the R2 object. The rest of the
+# GET https://ltp.melkor.me/api/* is served by this Worker. The rest of the
 # hostname stays on the Cloudflare Pages project.
 routes = [
-  { pattern = "ltp.melkor.me/prices.json", zone_name = "melkor.me" }
+  { pattern = "ltp.melkor.me/api/*", zone_name = "melkor.me" }
 ]
 
-[[r2_buckets]]
-binding = "PRICES"
-bucket_name = "labor-time-prices"
+# Numbeo responses and rate-limit counters are cached here. Create the real
+# namespace once and replace the placeholder id with the printed one:
+#   npx wrangler kv namespace create CITY_CACHE
+[[kv_namespaces]]
+binding = "CITY_CACHE"
+id = "00000000000000000000000000000000"

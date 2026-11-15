@@ -1,5 +1,6 @@
 import { en, type MessageKey } from "./en"
 import { zh, zhCategoryLabels, zhCountryLabels, zhItemLabels } from "./zh"
+import type { ApiErrorCode } from "../lib/api"
 import type { Exclusion } from "../lib/types"
 
 export type Lang = "zh" | "en"
@@ -55,21 +56,21 @@ export function exclusionMessage(lang: Lang, reason: Exclusion): string {
   }
 }
 
-const loadReasonKey = {
-  missing: "reasonMissing",
-  http: "reasonHttp",
-  timeout: "reasonTimeout",
-  invalid_json: "reasonInvalidJson",
-  invalid_schema: "reasonInvalidSchema",
-  network: "reasonNetwork",
-} as const
-
-export type LoadReason = keyof typeof loadReasonKey
-
-export function loadReasonMessage(
-  lang: Lang,
-  reason: LoadReason,
-  detail?: string,
-): string {
-  return formatMessage(t(lang, loadReasonKey[reason]), { status: detail ?? "" })
+export function apiErrorMessage(lang: Lang, code: ApiErrorCode): string {
+  switch (code) {
+    case "timeout":
+      return t(lang, "apiErrorTimeout")
+    case "network":
+      return t(lang, "apiErrorNetwork")
+    case "http":
+      return t(lang, "apiErrorHttp")
+    case "rate_limited":
+      return t(lang, "apiErrorRateLimited")
+    case "upstream":
+      return t(lang, "apiErrorUpstream")
+    case "invalid":
+      return t(lang, "apiErrorInvalid")
+    case "bad_response":
+      return t(lang, "apiErrorBadResponse")
+  }
 }

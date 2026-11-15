@@ -10,15 +10,19 @@ describe("linesForTarget", () => {
       ITEMS.internet,
       ITEMS.transit,
     ])
-    expect(linesForTarget("basket:rent-outside", {}).every((line) => line.quantity === 1)).toBe(true)
-    expect(linesForTarget("item:Cappuccino", {})).toEqual([{ item: "Cappuccino", quantity: 1 }])
+    expect(linesForTarget("basket:rent-outside", {}).every((line) => line.quantity === 1)).toBe(
+      true,
+    )
+    expect(linesForTarget(`item:${ITEMS.coffee}`, {})).toEqual([
+      { item: ITEMS.coffee, quantity: 1 },
+    ])
   })
 
   it("sums only checked custom lines", () => {
     const lines = linesForTarget("basket:custom", {
-      Cappuccino: { checked: true, quantity: "2" },
-      Internet: { checked: false, quantity: "4" },
+      [ITEMS.coffee]: { checked: true, quantity: "2" },
+      [ITEMS.internet]: { checked: false, quantity: "4" },
     })
-    expect(lines).toEqual([{ item: "Cappuccino", quantity: 2 }])
+    expect(lines).toEqual([{ item: ITEMS.coffee, quantity: 2 }])
   })
 })
