@@ -78,19 +78,19 @@ time curl -s http://127.0.0.1:8787/api/city/3781 | head -c 400   # 第二次：�
 
 ### 1. 建 KV 并部署 Worker
 
-Worker 的缓存和限流计数都放在 KV 里。第一次部署前建一次命名空间：
+Worker 的缓存和限流计数都放在 KV 里。仓库里的 `worker/wrangler.toml` 已经绑定了一个已创建的 `CITY_CACHE` namespace；如果是在自己的账号里重新部署（或 fork 了仓库），先建一次命名空间，再把 id 换进配置：
 
 ```bash
 cd worker
 npx wrangler kv namespace create CITY_CACHE
 ```
 
-把输出的 `id` 填进 `worker/wrangler.toml` 的 `[[kv_namespaces]]`（现在是占位符）：
+把输出的 `id` 填进 `worker/wrangler.toml` 的 `[[kv_namespaces]]`：
 
 ```toml
 [[kv_namespaces]]
 binding = "CITY_CACHE"
-id = "真正的命名空间 id"
+id = "你自己的命名空间 id"
 ```
 
 然后部署：
@@ -108,7 +108,7 @@ npx wrangler deploy
 ```bash
 cd web
 npm run build
-npx wrangler pages deploy dist --project-name ltp
+npx wrangler pages deploy dist --project-name ltp --branch main
 ```
 
 在该 Pages 项目上把自定义域名设为 `ltp.melkor.me`（只需一次）。静态资源在 `/assets/` 下带内容哈希，可以长期缓存。
@@ -126,6 +126,17 @@ curl -s https://ltp.melkor.me/api/city/3781 | head -c 400
 如果 `/api/city/<id>` 返回 `upstream_unavailable` 或 `upstream_error`，说明 Numbeo 拦了 Worker 的出口或改版了；可改用官方 API、换数据源，或回退到人工数据（见下）。
 
 冷启动约 2–4 秒（两次上游请求 + 解析），之后命中 KV 是毫秒级。Worker 免费版每请求 CPU 只有 10 ms，解析约 100 KB 的 HTML 有超限可能；如果日志里出现 CPU 超时（1102），升级 Workers Paid（$5/月）或把解析换成流式 `HTMLRewriter`。第一次部署建议先用上面的 `curl` 观察一次冷启动。
+
+### 4. 用 GitHub Actions 自动部署
+
+`.github/workflows/deploy.yml` 在 push 到 `main`（或手动 `workflow_dispatch`）时依次执行：web 安装依赖 / 测试 / lint / 构建 → worker 测试 → 部署 Worker → 部署 Pages 生产环境。部署命令和手动部署保持一致。
+
+前提是在 GitHub 仓库的 Settings → Secrets and variables → Actions 里添加：
+
+- `CLOUDFLARE_API_TOKEN`（Repository secret）：token 需要 `Workers Scripts:Edit`、`Workers KV Storage:Edit`、`Workers Routes:Edit`、`Cloudflare Pages:Edit`；只有改自定义域名/DNS 时才需要 `DNS:Edit`。
+- Account ID 已直接写在 workflow 的 `CLOUDFLARE_ACCOUNT_ID` 环境变量里；如果用的不是这个账号，改成自己的（Account ID 不是密钥，可以公开）。
+
+`CLOUDFLARE_API_TOKEN` 只注入到两个部署步骤，前面的 `npm ci`、测试、构建步骤拿不到这个 secret。想在本地用 token 部署时，不要把 token 写进仓库或 `wrangler.toml`，用环境变量或系统钥匙串注入即可。
 
 ## 缓存、限流与成本
 
