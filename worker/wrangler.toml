@@ -13,4 +13,4 @@ routes = [
 #   npx wrangler kv namespace create CITY_CACHE
 [[kv_namespaces]]
 binding = "CITY_CACHE"
-id = "00000000000000000000000000000000"
+id = "5f8acd1b9c944188abaa6de8fffd066e"
