@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ITEMS } from "../data/items"
+import { ITEMS, NUMBEO_ITEMS } from "../data/items"
 import { cityMatches } from "../lib/search"
 import { en } from "./en"
 import { labelCategory, labelCountry, labelItem, t } from "./index"
@@ -29,7 +29,20 @@ describe("i18n", () => {
     expect(labelItem("en", ITEMS.coffee)).toBe(ITEMS.coffee)
   })
 
-  it("labels the only Numbeo items the site reads", () => {
+  it("labels every Numbeo item in Chinese and keeps English in English", () => {
+    expect(new Set(NUMBEO_ITEMS).size).toBe(NUMBEO_ITEMS.length)
+    const labels = NUMBEO_ITEMS.map((item) => {
+      expect(zhItemLabels[item]).toBeTruthy()
+      const zhLabel = labelItem("zh", item)
+      expect(zhLabel).not.toBe(item)
+      expect(/[\u4e00-\u9fff]/.test(zhLabel)).toBe(true)
+      expect(labelItem("en", item)).toBe(item)
+      return zhLabel
+    })
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it("labels the built-in basket items", () => {
     for (const item of Object.values(ITEMS)) {
       expect(zhItemLabels[item]).toBeTruthy()
     }

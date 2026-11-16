@@ -1,4 +1,3 @@
-import { BASKETS } from "@/data/items"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import {
@@ -23,39 +22,28 @@ import type { BasketLine, CityRecord } from "@/lib/types"
 
 type RankingProps = {
   lang: Lang
-  target: string
-  onTarget: (target: string) => void
   cities: CityRecord[]
   lines: BasketLine[]
-  customEmpty: boolean
   overrides: Record<string, number>
-  items: string[]
+  customEmpty: boolean
+  // Passed only by the item-comparison tab, where the visitor picks one item.
+  target?: string
+  onTarget?: (target: string) => void
+  items?: string[]
 }
-
-const presetCopy = {
-  "rent-outside": { label: "presetRentOutside", hint: "presetRentOutsideHint" },
-  "rent-centre": { label: "presetRentCentre", hint: "presetRentCentreHint" },
-  "monthly-living": { label: "presetLiving", hint: "presetLivingHint" },
-} as const
 
 export function Ranking({
   lang,
-  target,
-  onTarget,
   cities,
   lines,
-  customEmpty,
   overrides,
+  customEmpty,
+  target,
+  onTarget,
   items,
 }: RankingProps) {
-  const hintKey =
-    target === "basket:rent-outside"
-      ? presetCopy["rent-outside"].hint
-      : target === "basket:rent-centre"
-        ? presetCopy["rent-centre"].hint
-        : target === "basket:monthly-living"
-          ? presetCopy["monthly-living"].hint
-          : null
+  const pickerItems = items ?? []
+  const showPicker = target !== undefined && onTarget !== undefined
   const result =
     customEmpty || lines.length === 0 ? null : rankCities(cities, lines, overrides)
 
@@ -64,40 +52,32 @@ export function Ranking({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h2 className="font-heading text-2xl">{t(lang, "rankTitle")}</h2>
       </div>
-      <div className="max-w-xl">
-        <Label htmlFor="rank-target" className="mb-2 block">
-          {t(lang, "rankTargetLabel")}
-        </Label>
-        <Select
-          value={items.length > 0 ? target : ""}
-          onValueChange={onTarget}
-          disabled={items.length === 0}
-        >
-          <SelectTrigger id="rank-target" className="w-full bg-card">
-            <SelectValue placeholder={t(lang, "rankTargetLabel")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>{t(lang, "rankGroupItems")}</SelectLabel>
-              {items.map((item) => (
-                <SelectItem key={item} value={`item:${item}`}>
-                  {labelItem(lang, item)}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-            <SelectGroup>
-              <SelectLabel>{t(lang, "rankGroupBaskets")}</SelectLabel>
-              {BASKETS.map((basket) => (
-                <SelectItem key={basket.id} value={`basket:${basket.id}`}>
-                  {t(lang, presetCopy[basket.id].label)}
-                </SelectItem>
-              ))}
-              <SelectItem value="basket:custom">{t(lang, "basketCustom")}</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        {hintKey && <p className="mt-2 text-sm text-muted-foreground">{t(lang, hintKey)}</p>}
-      </div>
+      {showPicker && (
+        <div className="max-w-xl">
+          <Label htmlFor="rank-target" className="mb-2 block">
+            {t(lang, "rankTargetLabel")}
+          </Label>
+          <Select
+            value={pickerItems.length > 0 ? (target ?? "") : ""}
+            onValueChange={(value) => onTarget?.(value)}
+            disabled={pickerItems.length === 0}
+          >
+            <SelectTrigger id="rank-target" className="w-full bg-card">
+              <SelectValue placeholder={t(lang, "rankTargetLabel")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>{t(lang, "rankGroupItems")}</SelectLabel>
+                {pickerItems.map((item) => (
+                  <SelectItem key={item} value={`item:${item}`}>
+                    {labelItem(lang, item)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       {cities.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t(lang, "rankEmptySelection")}</p>
       ) : customEmpty ? (

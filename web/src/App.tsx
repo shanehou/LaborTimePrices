@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { BasketEditor } from "@/components/BasketEditor"
 import { CitySelect } from "@/components/CitySelect"
+import { ComboPanel, CUSTOM_TARGET, PRESET_TARGET } from "@/components/ComboPanel"
 import { CompareTable, type PriceUnit } from "@/components/CompareTable"
 import { HoursEditor } from "@/components/HoursEditor"
 import { Ranking } from "@/components/Ranking"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { ITEMS } from "@/data/items"
+import { BASKETS, ITEMS } from "@/data/items"
 import { apiErrorMessage, formatMessage, t, type Lang } from "@/i18n"
 import { ApiError, fetchCatalog, fetchCity, type ApiErrorCode } from "@/lib/api"
 import { formatDate } from "@/lib/format"
@@ -43,7 +43,9 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   const [cityStates, setCityStates] = useState<Record<string, CityLoadState>>({})
   const [overrides, setOverrides] = useState(readHourOverrides)
   const [unit, setUnit] = useState<PriceUnit>("hours")
-  const [target, setTarget] = useState(`item:${ITEMS.coffee}`)
+  const [tab, setTab] = useState<"items" | "combos">("items")
+  const [itemTarget, setItemTarget] = useState(`item:${ITEMS.coffee}`)
+  const [comboTarget, setComboTarget] = useState<string>(PRESET_TARGET)
   const [custom, setCustom] = useState<CustomBasket>({})
   const controllers = useRef(new Map<string, AbortController>())
 
@@ -155,11 +157,11 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   const groups = useMemo(() => groupCatalog(catalogEntries), [catalogEntries])
   const items = useMemo(() => catalogEntries.map((entry) => entry.item), [catalogEntries])
 
-  const effectiveTarget = useMemo(() => {
-    if (items.length === 0 || !target.startsWith("item:")) return target
-    const item = target.slice("item:".length)
-    return items.includes(item) ? target : `item:${items[0]}`
-  }, [items, target])
+  const effectiveItemTarget = useMemo(() => {
+    if (items.length === 0 || !itemTarget.startsWith("item:")) return itemTarget
+    const item = itemTarget.slice("item:".length)
+    return items.includes(item) ? itemTarget : `item:${items[0]}`
+  }, [items, itemTarget])
 
   const latestScrapedAt = useMemo(() => {
     let latest: string | null = null
@@ -175,7 +177,20 @@ export default function App({ startupLang }: { startupLang: Lang }) {
     return latest
   }, [readyCities])
 
-  const lines = linesForTarget(effectiveTarget, custom)
+  const itemLines = linesForTarget(effectiveItemTarget, custom)
+  const comboLines = linesForTarget(comboTarget, custom)
+
+  function editFromPreset() {
+    setCustom(
+      Object.fromEntries(
+        BASKETS[0].lines.map((line) => [
+          line.item,
+          { checked: true, quantity: String(line.quantity) },
+        ]),
+      ),
+    )
+    setComboTarget(CUSTOM_TARGET)
+  }
 
   function retryCatalog() {
     setCityCatalog(null)
@@ -302,45 +317,72 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                 />
               </CardContent>
             </Card>
-            <CompareTable
-              lang={lang}
-              cities={readyCities}
-              overrides={overrides}
-              unit={unit}
-              onUnit={setUnit}
-            />
-            <Card>
-              <CardContent>
-                <Ranking
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={tab}
+              aria-label={t(lang, "viewLabel")}
+              onValueChange={(value) => {
+                if (value === "items" || value === "combos") setTab(value)
+              }}
+              className="self-start"
+            >
+              <ToggleGroupItem value="items" className={activeLangClass}>
+                {t(lang, "tabItems")}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="combos" className={activeLangClass}>
+                {t(lang, "tabCombos")}
+              </ToggleGroupItem>
+            </ToggleGroup>
+            {tab === "items" ? (
+              <>
+                <CompareTable
                   lang={lang}
-                  target={effectiveTarget}
-                  onTarget={setTarget}
                   cities={readyCities}
-                  lines={lines}
-                  customEmpty={effectiveTarget === "basket:custom" && lines.length === 0}
                   overrides={overrides}
-                  items={items}
+                  unit={unit}
+                  onUnit={setUnit}
                 />
-              </CardContent>
-            </Card>
-            <BasketEditor
-              lang={lang}
-              groups={groups}
-              hasCities={readyCities.length > 0}
-              custom={custom}
-              onToggle={(item, checked) =>
-                setCustom((current) => ({
-                  ...current,
-                  [item]: { checked, quantity: current[item]?.quantity ?? "1" },
-                }))
-              }
-              onQuantity={(item, quantity) =>
-                setCustom((current) => ({
-                  ...current,
-                  [item]: { checked: current[item]?.checked ?? false, quantity },
-                }))
-              }
-            />
+                <Card>
+                  <CardContent>
+                    <Ranking
+                      lang={lang}
+                      target={effectiveItemTarget}
+                      onTarget={setItemTarget}
+                      cities={readyCities}
+                      lines={itemLines}
+                      customEmpty={false}
+                      overrides={overrides}
+                      items={items}
+                    />
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <ComboPanel
+                lang={lang}
+                cities={readyCities}
+                overrides={overrides}
+                target={comboTarget}
+                onTarget={setComboTarget}
+                lines={comboLines}
+                custom={custom}
+                onToggle={(item, checked) =>
+                  setCustom((current) => ({
+                    ...current,
+                    [item]: { checked, quantity: current[item]?.quantity ?? "1" },
+                  }))
+                }
+                onQuantity={(item, quantity) =>
+                  setCustom((current) => ({
+                    ...current,
+                    [item]: { checked: current[item]?.checked ?? false, quantity },
+                  }))
+                }
+                onEditFromPreset={editFromPreset}
+                groups={groups}
+              />
+            )}
           </>
         )}
       </main>

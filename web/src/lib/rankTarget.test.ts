@@ -10,9 +10,9 @@ describe("linesForTarget", () => {
       ITEMS.internet,
       ITEMS.transit,
     ])
-    expect(linesForTarget("basket:rent-outside", {}).every((line) => line.quantity === 1)).toBe(
-      true,
-    )
+    expect(
+      linesForTarget("basket:monthly-living", {}).every((line) => line.quantity === 1),
+    ).toBe(true)
     expect(linesForTarget(`item:${ITEMS.coffee}`, {})).toEqual([
       { item: ITEMS.coffee, quantity: 1 },
     ])

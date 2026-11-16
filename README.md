@@ -70,7 +70,7 @@ time curl -s http://127.0.0.1:8787/api/city/3781 | head -c 400   # 第一次：�
 time curl -s http://127.0.0.1:8787/api/city/3781 | head -c 400   # 第二次：命中 KV
 ```
 
-页面手工验收：打开 Vite 地址，应该先看到空状态和「先在上面选一座城市」；选 Shanghai → 先出现「正在获取 Shanghai…」，然后价格表、排行、自定义篮子出现；再选 Zurich → 两城对比；输入目录里没有的城市（例如 Cambridge）→ 出现「从 Numbeo 搜索」并可以选中；切到 English → 条目名变回 Numbeo 英文原文；页脚有 Numbeo 回链、抓取时间和免责声明。
+页面手工验收：打开 Vite 地址，应该先看到空状态和「先在上面选一座城市」；选 Shanghai → 先出现「正在获取 Shanghai…」，「单项对比」Tab 里出现价格表和单项排行，条目名都是中文；切到「组合」Tab → 两张组合卡片直接列出条目与数量，下方是组合明细（各城单价 × 数量、合计）和按组合的排行，「以此为基础编辑」可把预设填进自定义组合；再选 Zurich → 两城对比；输入目录里没有的城市（例如 Cambridge）→ 出现「从 Numbeo 搜索」并可以选中；切到 English → 条目名变回 Numbeo 英文原文；页脚有 Numbeo 回链、抓取时间和免责声明。
 
 想重新测「冷启动」，删掉 `worker/.wrangler/` 再重启 `wrangler dev`，本地 KV 就清空了。
 
@@ -169,7 +169,7 @@ curl -s https://ltp.melkor.me/api/city/3781 | head -c 400
 ## 城市目录与条目名
 
 - 加/删城市：直接改 `worker/catalog.js`（`{ id, name, country }`，`id` 是 Numbeo 的 city id）。目录只影响选择器，不影响抓取逻辑。
-- 内置篮子/条目名在 `web/src/data/items.ts`，必须和 Numbeo 页面上的英文原文完全一致；Worker 解析器在 `worker/numbeo.js`。Numbeo 改版导致解析失败时，先更新 `worker/test/fixtures/` 和解析测试。
+- 内置组合/条目名在 `web/src/data/items.ts`，必须和 Numbeo 页面上的英文原文完全一致；同一文件里的 `NUMBEO_ITEMS` 是当前页面全部条目的清单，中文名在 `web/src/i18n/zh.ts` 的 `zhItemLabels`，TypeScript 会确保两者一一对应，没收录的新条目自动回退显示英文原文。Worker 解析器在 `worker/numbeo.js`。Numbeo 改版时，条目清单、中文翻译、`worker/test/fixtures/` 和解析测试要一起更新。
 - 目录外城市：在城市选择器里搜不到时就查 Numbeo 搜索接口，选中后同样走 `/api/city/:id`；冷抓取仍受上面的限流约束。
 
 ## 公式
@@ -187,7 +187,7 @@ curl -s https://ltp.melkor.me/api/city/3781 | head -c 400
 
 城市 chips 可以拖动调整顺序，第一个城市就是基准；也可以用 chip 上的 ↑ 按钮把某座城市直接设为基准。手机浏览器不支持原生拖动，用 ↑ 按钮即可。拖动把手聚焦后还能用左右方向键微调顺序。
 
-内置篮子：市中心外一居月租、市中心一居月租、以及市中心外一居 + 水电 + 宽带 + 公交月票（每项数量 1）。自定义篮子是勾选项的「标价 × 数量」之和，再除以时薪。
+内置组合只保留「市中心外的月度生活」（市中心外一居 + 水电 + 宽带 + 公交月票，每项数量 1）；两个只含房租的旧预设已删除，因为它们和「单项对比」里的同名条目完全重复。自定义组合是勾选项的「标价 × 数量」之和，再除以时薪。页面顶部「单项对比 / 组合」两个 Tab 共享同一批城市和工时；组合 Tab 里能看到每项在各城的单价 × 数量、合计与排行，设计见 `docs/plans/2026-11-16-combo-tab-design.md`。
 
 ## 目录
 

@@ -1,4 +1,5 @@
 import type { MessageKey } from "./en"
+import type { NumbeoItem } from "../data/items"
 
 export const zh = {
   docTitle: "标价里的劳动小时",
@@ -58,17 +59,27 @@ export const zh = {
   unitHours: "劳动小时",
   unitUsd: "美元标价",
   colItem: "支出",
+  viewLabel: "视图",
+  tabItems: "单项对比",
+  tabCombos: "组合",
+  comboTitle: "组合对比",
+  comboPickerLabel: "选择组合",
+  comboDetailTitle: "组合明细",
+  comboQty: "数量",
+  comboTotal: "合计",
+  comboEmpty: "这个组合还没有条目。",
+  comboEditFromPreset: "以此为基础编辑",
+  comboPickCities: "先选择城市，组合明细会出现在这里。",
   rankTitle: "排行",
   rankTargetLabel: "按这项排",
   rankGroupItems: "单笔支出",
-  rankGroupBaskets: "篮子",
   rankNone: "这项没有城市可以排。",
   rankExcluded: "未计入",
   rankEmptySelection: "先在上面选择城市，再来排行。",
-  basketCustom: "自定义篮子",
+  basketCustom: "自定义组合",
   basketEmpty: "至少勾选一项。",
-  basketTitle: "自定义篮子",
-  basketHint: "勾选的支出按「标价 × 数量」相加，再除以时薪。对齐用的是英文条目名，不用翻译。",
+  basketTitle: "自定义组合",
+  basketHint: "勾选的支出按「标价 × 数量」相加，再除以时薪。条目名显示为中文，但匹配仍按 Numbeo 英文原文。",
   basketQty: "{item} 的数量",
   basketPickCities: "先选择城市，城市报出的条目会出现在这里。",
   basketNoItems: "已选城市还没有报出任何物价条目。",
@@ -85,25 +96,100 @@ export const zh = {
   minutesSuffix: "{hours} 小时（{minutes} 分钟）",
   hoursSuffix: "{hours} 小时",
   wageLabel: "时薪",
-  presetRentOutside: "市中心外一居",
-  presetRentCentre: "市中心一居",
   presetLiving: "市中心外的月度生活",
-  presetRentOutsideHint: "只含市中心外一居的月租，按标价。",
-  presetRentCentreHint: "只含市中心一居的月租，按标价。",
-  presetLivingHint: "市中心外一居月租、水电、宽带、公交月票，每项数量都是 1。",
 } satisfies Record<MessageKey, string>
 
-export const zhItemLabels: Record<string, string> = {
+// Chinese names for every Numbeo item (see data/items.ts). Keys must match the
+// English original exactly; satisfies catches missing or misspelled entries.
+// Anything Numbeo adds later falls back to its English name via labelItem().
+const zhNumbeoItems = {
+  // Restaurants
+  "Meal at an Inexpensive Restaurant": "平价餐厅一餐",
+  "Meal for Two at a Mid-Range Restaurant (Three Courses, Without Drinks)":
+    "中档餐厅双人餐（三道菜，不含酒水）",
+  "Combo Meal at McDonald's (or Equivalent Fast-Food Meal)": "麦当劳套餐（或同类快餐套餐）",
+  "Domestic Draft Beer (0.5 Liter)": "国产生啤（0.5 升）",
+  "Imported Beer (0.33 Liter Bottle)": "进口啤酒（0.33 升瓶装）",
   "Cappuccino (Regular Size)": "卡布奇诺（常规杯）",
-  "1 Bedroom Apartment Outside of City Centre": "市中心外一居室",
-  "1 Bedroom Apartment in City Centre": "市中心一居室",
+  "Soft Drink (Coca-Cola or Pepsi, 0.33 Liter Bottle)":
+    "碳酸饮料（可口可乐或百事，0.33 升瓶装）",
+  "Bottled Water (0.33 Liter)": "瓶装水（0.33 升）",
+
+  // Markets
+  "Milk (Regular, 1 Liter)": "牛奶（普通，1 升）",
+  "Fresh White Bread (500 g Loaf)": "新鲜白面包（500 克一条）",
+  "White Rice (1 kg)": "白米（1 千克）",
+  "Eggs (12, Large Size)": "鸡蛋（12 个，大号）",
+  "Local Cheese (1 kg)": "本地奶酪（1 千克）",
+  "Chicken Fillets (1 kg)": "鸡胸肉（1 千克）",
+  "Beef Round or Equivalent Back Leg Red Meat (1 kg)": "牛腿肉或同类后腿红肉（1 千克）",
+  "Apples (1 kg)": "苹果（1 千克）",
+  "Bananas (1 kg)": "香蕉（1 千克）",
+  "Oranges (1 kg)": "橙子（1 千克）",
+  "Tomatoes (1 kg)": "番茄（1 千克）",
+  "Potatoes (1 kg)": "土豆（1 千克）",
+  "Onions (1 kg)": "洋葱（1 千克）",
+  "Lettuce (1 Head)": "生菜（1 棵）",
+  "Bottled Water (1.5 Liter)": "瓶装水（1.5 升）",
+  "Bottle of Wine (Mid-Range)": "葡萄酒（中档，1 瓶）",
+  "Domestic Beer (0.5 Liter Bottle)": "国产啤酒（0.5 升瓶装）",
+  "Cigarettes (Pack of 20, Marlboro)": "香烟（20 支装，万宝路）",
+
+  // Transportation
+  "One-Way Ticket (Local Transport)": "本地交通单程票",
+  "Monthly Public Transport Pass (Regular Price)": "公共交通月票（正常票价）",
+  "Taxi Start (Standard Tariff)": "出租车起步价（标准计费）",
+  "Taxi 1 km (Standard Tariff)": "出租车每公里（标准计费）",
+  "Taxi 1 Hour Waiting (Standard Tariff)": "出租车等候 1 小时（标准计费）",
+  "Gasoline (1 Liter)": "汽油（1 升）",
+  "Volkswagen Golf 1.5 (or Equivalent New Compact Car)": "大众高尔夫 1.5（或同类新紧凑型车）",
+  "Toyota Corolla Sedan 1.6 (or Equivalent New Mid-Size Car)":
+    "丰田卡罗拉三厢 1.6（或同类新中型车）",
+
+  // Utilities (Monthly)
   "Basic Utilities for 85 m2 Apartment (Electricity, Heating, Cooling, Water, Garbage)":
     "85 平米公寓基本水电（电、暖气、冷气、水、垃圾）",
+  "Mobile Phone Plan (Monthly, with Calls and 10GB+ Data)":
+    "手机套餐（每月，含通话与 10GB 以上流量）",
   "Broadband Internet (Unlimited Data, 60 Mbps or Higher)":
     "宽带（不限流量，60 Mbps 及以上）",
-  "Monthly Public Transport Pass (Regular Price)": "公共交通月票（正常票价）",
+
+  // Sports And Leisure
+  "Monthly Fitness Club Membership": "健身房月卡",
+  "Tennis Court Rental (1 Hour, Weekend)": "网球场租用（周末，1 小时）",
+  "Swimming Pool (Indoor, Adult Admission, Single Visit)": "室内泳池（成人单次票）",
+  "Cinema Ticket (International Release)": "电影票（进口影片）",
+  "Netflix Premium or Equivalent (4K Video Streaming, Ad-Free, Monthly)":
+    "Netflix 高级版或同类（4K 无广告流媒体，月费）",
+
+  // Childcare
+  "Private Full-Day Preschool or Kindergarten, Monthly Fee per Child":
+    "私立全日制幼儿园（每名孩子每月）",
   "International Primary School, Annual Tuition per Child": "国际小学（每名孩子每年学费）",
-}
+
+  // Clothing And Shoes
+  "Jeans (Levi's 501 or Similar)": "牛仔裤（Levi's 501 或同类）",
+  "Summer Dress in a Chain Store (e.g. Zara or H&M)": "连锁店连衣裙（如 Zara、H&M）",
+  "Nike Running Shoes (Mid-Range)": "耐克跑鞋（中档）",
+  "Men's Leather Business Shoes": "男士商务皮鞋",
+
+  // Personal Care and Household Services
+  "Men's Haircut (Standard Barbershop)": "男士理发（普通理发店）",
+  "Women's Haircut (Wash and Basic Cut)": "女士理发（洗剪）",
+  "Household Cleaning Service (Per Hour)": "家政保洁（每小时）",
+
+  // Rent Per Month
+  "1 Bedroom Apartment in City Centre": "市中心一居室",
+  "1 Bedroom Apartment Outside of City Centre": "市中心外一居室",
+  "3 Bedroom Apartment in City Centre": "市中心三居室",
+  "3 Bedroom Apartment Outside of City Centre": "市中心外三居室",
+
+  // Buy Apartment Price
+  "Price per Square Meter to Buy Apartment in City Centre": "市中心购房每平方米价格",
+  "Price per Square Meter to Buy Apartment Outside of Centre": "市中心外购房每平方米价格",
+} satisfies Record<NumbeoItem, string>
+
+export const zhItemLabels: Record<string, string> = zhNumbeoItems
 
 export const zhCategoryLabels: Record<string, string> = {
   Restaurants: "餐饮",
