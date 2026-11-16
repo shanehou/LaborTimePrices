@@ -8,6 +8,9 @@
  * translation and rejects misspelled keys. When Numbeo changes an item name,
  * update this list, the labels, and the Worker fixtures/parse tests together.
  * Items this list does not know about fall back to their English name.
+ *
+ * Order is the share-link item index. Append new names; do not reorder or
+ * insert, or previously copied links will point at the wrong items.
  */
 export const NUMBEO_ITEMS = [
   // Restaurants

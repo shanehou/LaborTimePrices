@@ -53,6 +53,12 @@ export function exclusionMessage(lang: Lang, reason: Exclusion): string {
       return formatMessage(t(lang, "reasonNonPositivePrice"), { item })
     case "non_positive_quantity":
       return formatMessage(t(lang, "reasonNonPositiveQuantity"), { item })
+    case "needs_times":
+      return t(lang, "reasonNeedsTimes")
+    case "needs_years":
+      return t(lang, "reasonNeedsYears")
+    case "needs_area":
+      return t(lang, "reasonNeedsArea")
   }
 }
 

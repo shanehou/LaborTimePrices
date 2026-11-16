@@ -1,7 +1,10 @@
 import type { ReactNode } from "react"
 import { BasketEditor } from "@/components/BasketEditor"
+import { HorizonToggle } from "@/components/HorizonBar"
+import { ItemUsage } from "@/components/ItemUsage"
 import { Ranking } from "@/components/Ranking"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -11,15 +14,25 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { BASKETS } from "@/data/items"
-import { labelItem, t, type Lang } from "@/i18n"
+import { CUSTOM_TARGET, PRESET_TARGET } from "@/lib/rankTarget"
+import { exclusionMessage, labelItem, t, type Lang } from "@/i18n"
 import { comboDetail } from "@/lib/combo"
-import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
-import { evaluateBasket } from "@/lib/labor"
+import { describeQuantity } from "@/lib/exportCsv"
+import { formatLaborHours, formatUsd } from "@/lib/format"
+import { findPrice, evaluateBasket } from "@/lib/labor"
+import {
+  lineSpendUsd,
+  quantityFromField,
+  setUsageNumber,
+  usageBlock,
+  type Horizon,
+  type PeriodContext,
+  type Usage,
+} from "@/lib/period"
 import type { CustomBasket } from "@/lib/rankTarget"
 import type { BasketLine, CityRecord } from "@/lib/types"
 
-export const PRESET_TARGET = `basket:${BASKETS[0].id}`
-export const CUSTOM_TARGET = "basket:custom"
+export { CUSTOM_TARGET, PRESET_TARGET }
 
 type ComboPanelProps = {
   lang: Lang
@@ -29,6 +42,12 @@ type ComboPanelProps = {
   onTarget: (target: string) => void
   lines: BasketLine[]
   custom: CustomBasket
+  customName: string
+  onCustomName: (name: string) => void
+  horizon: Horizon
+  onHorizon: (horizon: Horizon) => void
+  usage: Usage
+  onUsage: (usage: Usage) => void
   onToggle: (item: string, checked: boolean) => void
   onQuantity: (item: string, quantity: string) => void
   onEditFromPreset: () => void
@@ -43,19 +62,28 @@ export function ComboPanel({
   onTarget,
   lines,
   custom,
+  customName,
+  onCustomName,
+  horizon,
+  onHorizon,
+  usage,
+  onUsage,
   onToggle,
   onQuantity,
   onEditFromPreset,
   groups,
 }: ComboPanelProps) {
   const isCustom = target === CUSTOM_TARGET
+  const period: PeriodContext = { horizon, mode: "combo", usage }
   const rows = comboDetail(lines, cities)
   const checked = Object.entries(custom).filter(([, state]) => state.checked)
 
   return (
     <section className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
-        <h2 className="font-heading text-2xl">{t(lang, "comboTitle")}</h2>
+        <div className="flex flex-col gap-3">
+          <HorizonToggle lang={lang} horizon={horizon} onHorizon={onHorizon} />
+        </div>
         <p className="text-sm text-muted-foreground">{t(lang, "comboPickerLabel")}</p>
         <div className="grid gap-3 md:grid-cols-2">
           <ComboCard
@@ -83,15 +111,29 @@ export function ComboPanel({
             )}
           </ComboCard>
           <ComboCard
-            title={t(lang, "basketCustom")}
+            title={customName.trim() || t(lang, "basketCustom")}
             selected={isCustom}
             onSelect={() => onTarget(CUSTOM_TARGET)}
           >
+            <Input
+              value={customName}
+              placeholder={t(lang, "basketCustom")}
+              aria-label={t(lang, "customNameLabel")}
+              onFocus={() => onTarget(CUSTOM_TARGET)}
+              onChange={(event) => onCustomName(event.target.value.slice(0, 40))}
+            />
             {checked.length > 0 ? (
               <ul className="flex flex-col gap-1">
                 {checked.map(([item, state]) => (
                   <li key={item} className="text-sm text-muted-foreground">
-                    {labelItem(lang, item)} × {state.quantity}
+                    {labelItem(lang, item)} ·{" "}
+                    {describeQuantity(
+                      lang,
+                      item,
+                      quantityFromField(state.quantity),
+                      horizon,
+                      usage.years[item],
+                    )}
                   </li>
                 ))}
               </ul>
@@ -108,8 +150,11 @@ export function ComboPanel({
           groups={groups}
           hasCities={cities.length > 0}
           custom={custom}
+          horizon={horizon}
+          usage={usage}
           onToggle={onToggle}
           onQuantity={onQuantity}
+          onYears={(item, years) => onUsage(setUsageNumber(usage, "years", item, years))}
         />
       )}
 
@@ -125,7 +170,9 @@ export function ComboPanel({
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-56">{t(lang, "colItem")}</TableHead>
-                  <TableHead className="w-20">{t(lang, "comboQty")}</TableHead>
+                  <TableHead className="min-w-36">
+                    {t(lang, horizon === "listed" ? "comboQty" : "csvUsage")}
+                  </TableHead>
                   {cities.map((city) => (
                     <TableHead key={city.id} className="text-right whitespace-nowrap">
                       {city.name}
@@ -134,27 +181,43 @@ export function ComboPanel({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.item}>
-                    <TableCell className="font-medium whitespace-normal">
-                      {labelItem(lang, row.item)}
-                    </TableCell>
-                    <TableCell className="nums">{formatPlain(lang, row.quantity, 2)}</TableCell>
-                    {cities.map((city) => {
-                      const value = row.byCity[city.id]
-                      return (
-                        <TableCell key={city.id} className="text-right nums">
-                          {value === null ? "—" : formatUsd(lang, value)}
-                        </TableCell>
-                      )
-                    })}
-                  </TableRow>
-                ))}
+                {rows.map((row) => {
+                  const blocked = usageBlock(row.item, row.quantity, period)
+                  return (
+                    <TableRow key={row.item}>
+                      <TableCell className="whitespace-normal">
+                        <ItemUsage
+                          lang={lang}
+                          item={row.item}
+                          horizon={horizon}
+                          mode="combo"
+                          usage={usage}
+                          quantity={row.quantity}
+                        />
+                      </TableCell>
+                      <TableCell className="nums whitespace-normal">
+                        {describeQuantity(lang, row.item, row.quantity, horizon, usage.years[row.item])}
+                      </TableCell>
+                      {cities.map((city) => {
+                        const price = findPrice(city, row.item)
+                        const spent =
+                          blocked || !price
+                            ? null
+                            : lineSpendUsd(price.price_usd, row.item, row.quantity, period)
+                        return (
+                          <TableCell key={city.id} className="text-right nums">
+                            {spent && spent.ok ? formatUsd(lang, spent.usd) : "—"}
+                          </TableCell>
+                        )
+                      })}
+                    </TableRow>
+                  )
+                })}
                 <TableRow className="bg-muted/70 hover:bg-muted/70">
                   <TableCell className="font-medium">{t(lang, "comboTotal")}</TableCell>
                   <TableCell />
                   {cities.map((city) => {
-                    const result = evaluateBasket(city, lines, overrides[city.id])
+                    const result = evaluateBasket(city, lines, overrides[city.id], period)
                     return (
                       <TableCell key={city.id} className="text-right nums">
                         {result.ok ? (
@@ -167,7 +230,9 @@ export function ComboPanel({
                             </span>
                           </>
                         ) : (
-                          "—"
+                          <span className="text-xs text-muted-foreground">
+                            {exclusionMessage(lang, result.reason)}
+                          </span>
                         )}
                       </TableCell>
                     )
@@ -184,6 +249,7 @@ export function ComboPanel({
         cities={cities}
         lines={lines}
         overrides={overrides}
+        period={period}
         customEmpty={isCustom && lines.length === 0}
       />
     </section>

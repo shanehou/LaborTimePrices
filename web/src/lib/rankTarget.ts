@@ -1,13 +1,16 @@
 import { BASKETS, type BasketId } from "@/data/items"
+import { quantityFromField } from "@/lib/period"
 import type { BasketLine } from "@/lib/types"
+
+export const PRESET_TARGET = `basket:${BASKETS[0].id}`
+export const CUSTOM_TARGET = "basket:custom"
 
 export type CustomBasket = Record<string, { checked: boolean; quantity: string }>
 
 export function customLines(custom: CustomBasket): BasketLine[] {
   return Object.entries(custom).flatMap(([item, state]) => {
     if (!state.checked) return []
-    const quantity = Number(state.quantity)
-    return [{ item, quantity: Number.isFinite(quantity) ? quantity : Number.NaN }]
+    return [{ item, quantity: quantityFromField(state.quantity) }]
   })
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
+import { ItemUsage } from "@/components/ItemUsage"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,7 +18,6 @@ import {
   formatMessage,
   labelCategory,
   labelCountry,
-  labelItem,
   t,
   type Lang,
 } from "@/i18n"
@@ -25,11 +25,13 @@ import { deltaTone, formatDeltaPercent, percentDelta } from "@/lib/compare"
 import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
 import {
   evaluateBasket,
-  findPrice,
   groupCatalog,
   listCatalog,
   resolveMonthlyHours,
 } from "@/lib/labor"
+import { emptyUsage, usageBlock, type PeriodContext } from "@/lib/period"
+
+const LISTED_PERIOD: PeriodContext = { horizon: "listed", mode: "single", usage: emptyUsage() }
 import type { CityRecord } from "@/lib/types"
 
 export type PriceUnit = "hours" | "usd"
@@ -42,13 +44,19 @@ type CompareTableProps = {
   onUnit: (unit: PriceUnit) => void
 }
 
-const ITEM_COLUMN = "w-60"
+const ITEM_COLUMN = "w-72"
 const BASELINE_COLUMN = "w-44"
-const BASELINE_STICKY = "left-60"
+const BASELINE_STICKY = "left-72"
 const PERCENT_COLUMN = "w-[4.75rem]"
 const VALUE_COLUMN = "w-24"
 
-export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareTableProps) {
+export function CompareTable({
+  lang,
+  cities,
+  overrides,
+  unit,
+  onUnit,
+}: CompareTableProps) {
   const groups = groupCatalog(listCatalog(cities))
   const baselineCity = cities.length > 1 ? cities[0] : undefined
   const [showValues, setShowValues] = useState(false)
@@ -90,14 +98,14 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h2 className="font-heading text-2xl">{t(lang, "compareTitle")}</h2>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 rounded-lg bg-muted/70 px-2 py-1">
+          <span className="text-xs text-muted-foreground">{t(lang, "measureLabel")}</span>
           <ToggleGroup
             type="single"
             variant="outline"
             value={unit}
-            aria-label={t(lang, "compareTitle")}
+            aria-label={t(lang, "measureLabel")}
             onValueChange={(value) => {
               if (value === "hours" || value === "usd") onUnit(value)
             }}
@@ -105,12 +113,14 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
             <ToggleGroupItem value="hours">{t(lang, "unitHours")}</ToggleGroupItem>
             <ToggleGroupItem value="usd">{t(lang, "unitUsd")}</ToggleGroupItem>
           </ToggleGroup>
+        </div>
+        <div className="hidden items-center gap-2 rounded-lg bg-muted/70 px-2 py-1 md:flex">
+          <span className="text-xs text-muted-foreground">{t(lang, "compareViewLabel")}</span>
           <ToggleGroup
             type="single"
             variant="outline"
             value={showValues ? "values" : "percent"}
-            aria-label={t(lang, "compareModeValues")}
-            className="hidden md:flex"
+            aria-label={t(lang, "compareViewLabel")}
             onValueChange={(value) => {
               if (value === "percent" || value === "values") setShowValues(value === "values")
             }}
@@ -118,7 +128,8 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
             <ToggleGroupItem value="percent">{t(lang, "compareModePercent")}</ToggleGroupItem>
             <ToggleGroupItem value="values">{t(lang, "compareModeValues")}</ToggleGroupItem>
           </ToggleGroup>
-          <div className="hidden items-center gap-1 md:flex">
+        </div>
+        <div className="hidden items-center gap-1 md:flex">
             <Button
               type="button"
               variant="outline"
@@ -140,7 +151,6 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
               <ChevronRightIcon />
             </Button>
           </div>
-        </div>
       </div>
       {cities.length > 1 && (
         <p className="text-xs text-muted-foreground">{t(lang, "compareBaselineHint")}</p>
@@ -231,6 +241,7 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
                       cities={cities}
                       overrides={overrides}
                       unit={unit}
+                      period={LISTED_PERIOD}
                       baselineCity={baselineCity}
                       showValues={showValues}
                     />
@@ -246,6 +257,7 @@ export function CompareTable({ lang, cities, overrides, unit, onUnit }: CompareT
               cities={cities}
               overrides={overrides}
               unit={unit}
+              period={LISTED_PERIOD}
               baselineCity={baselineCity}
             />
           </div>
@@ -262,6 +274,7 @@ function CategoryRows({
   cities,
   overrides,
   unit,
+  period,
   baselineCity,
   showValues,
 }: {
@@ -271,6 +284,7 @@ function CategoryRows({
   cities: CityRecord[]
   overrides: Record<string, number>
   unit: PriceUnit
+  period: PeriodContext
   baselineCity: CityRecord | undefined
   showValues: boolean
 }) {
@@ -282,13 +296,22 @@ function CategoryRows({
         </TableCell>
       </TableRow>
       {items.map((item) => {
-        const baselineValue = baselineValueFor(baselineCity, item, unit, overrides)
+        const blocked = usageBlock(item, 1, period)
+        const baselineValue = blocked
+          ? null
+          : baselineValueFor(baselineCity, item, unit, overrides, period)
         return (
           <TableRow key={item}>
             <TableCell
-              className={`sticky left-0 z-20 ${ITEM_COLUMN} bg-card align-top font-medium whitespace-normal leading-snug`}
+              className={`sticky left-0 z-20 ${ITEM_COLUMN} bg-card align-top whitespace-normal leading-snug`}
             >
-              {labelItem(lang, item)}
+              <ItemUsage
+                lang={lang}
+                item={item}
+                horizon="listed"
+                mode="single"
+                usage={period.usage}
+              />
             </TableCell>
             {cities.map((city, index) => {
               const isBaseline = city.id === baselineCity?.id
@@ -303,17 +326,22 @@ function CategoryRows({
                   data-item={item}
                   className={`align-top whitespace-normal nums ${stickyClass}`}
                 >
-                  <CellValue
-                    lang={lang}
-                    city={city}
-                    item={item}
-                    unit={unit}
-                    override={overrides[city.id]}
-                    baselineValue={baselineValue}
-                    baselineName={baselineCity?.name}
-                    isBaseline={isBaseline}
-                    showValues={showValues}
-                  />
+                  {blocked ? (
+                    <span>—</span>
+                  ) : (
+                    <CellValue
+                      lang={lang}
+                      city={city}
+                      item={item}
+                      unit={unit}
+                      period={period}
+                      override={overrides[city.id]}
+                      baselineValue={baselineValue}
+                      baselineName={baselineCity?.name}
+                      isBaseline={isBaseline}
+                      showValues={showValues}
+                    />
+                  )}
                 </TableCell>
               )
             })}
@@ -330,14 +358,12 @@ function baselineValueFor(
   item: string,
   unit: PriceUnit,
   overrides: Record<string, number>,
+  period: PeriodContext,
 ): number | null {
   if (!city) return null
-  if (unit === "usd") {
-    const price = findPrice(city, item)
-    return price && price.price_usd > 0 ? price.price_usd : null
-  }
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], overrides[city.id])
-  return result.ok ? result.hours : null
+  const result = evaluateBasket(city, [{ item, quantity: 1 }], overrides[city.id], period)
+  if (!result.ok) return null
+  return unit === "usd" ? result.totalUsd : result.hours
 }
 
 type CellModel =
@@ -349,6 +375,7 @@ function cellModel({
   city,
   item,
   unit,
+  period,
   override,
   baselineValue,
   isBaseline,
@@ -357,29 +384,17 @@ function cellModel({
   city: CityRecord
   item: string
   unit: PriceUnit
+  period: PeriodContext
   override: number | undefined
   baselineValue: number | null
   isBaseline: boolean
 }): CellModel {
-  if (unit === "usd") {
-    const price = findPrice(city, item)
-    if (!price) return { kind: "reason", text: exclusionMessage(lang, { code: "missing_item", item }) }
-    if (!(price.price_usd > 0)) {
-      return {
-        kind: "reason",
-        text: exclusionMessage(lang, { code: "non_positive_price", item }),
-      }
-    }
-    const delta =
-      !isBaseline && baselineValue !== null ? percentDelta(price.price_usd, baselineValue) : null
-    return { kind: "value", text: formatUsd(lang, price.price_usd), delta }
-  }
-
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], override)
+  const result = evaluateBasket(city, [{ item, quantity: 1 }], override, period)
   if (!result.ok) return { kind: "reason", text: exclusionMessage(lang, result.reason) }
-  const delta =
-    !isBaseline && baselineValue !== null ? percentDelta(result.hours, baselineValue) : null
-  return { kind: "value", text: formatLaborHours(lang, result.hours), delta }
+  const value = unit === "usd" ? result.totalUsd : result.hours
+  const delta = !isBaseline && baselineValue !== null ? percentDelta(value, baselineValue) : null
+  const text = unit === "usd" ? formatUsd(lang, result.totalUsd) : formatLaborHours(lang, result.hours)
+  return { kind: "value", text, delta }
 }
 
 function CellValue({
@@ -387,6 +402,7 @@ function CellValue({
   city,
   item,
   unit,
+  period,
   override,
   baselineValue,
   baselineName,
@@ -397,13 +413,14 @@ function CellValue({
   city: CityRecord
   item: string
   unit: PriceUnit
+  period: PeriodContext
   override: number | undefined
   baselineValue: number | null
   baselineName: string | undefined
   isBaseline: boolean
   showValues: boolean
 }) {
-  const model = cellModel({ lang, city, item, unit, override, baselineValue, isBaseline })
+  const model = cellModel({ lang, city, item, unit, period, override, baselineValue, isBaseline })
   if (model.kind === "reason") return <Reason>{model.text}</Reason>
   const showAbsolute = isBaseline || showValues || model.delta === null
   return (
@@ -427,6 +444,7 @@ function CompareCards({
   cities,
   overrides,
   unit,
+  period,
   baselineCity,
 }: {
   lang: Lang
@@ -434,6 +452,7 @@ function CompareCards({
   cities: CityRecord[]
   overrides: Record<string, number>
   unit: PriceUnit
+  period: PeriodContext
   baselineCity: CityRecord | undefined
 }) {
   return (
@@ -450,22 +469,34 @@ function CompareCards({
           </h3>
           <ul className="flex flex-col gap-2">
             {group.items.map((item) => {
-              const baselineValue = baselineValueFor(baselineCity, item, unit, overrides)
+              const blocked = usageBlock(item, 1, period)
+              const baselineValue = blocked
+                ? null
+                : baselineValueFor(baselineCity, item, unit, overrides, period)
               return (
                 <li key={item} className="rounded-xl bg-card p-3 ring-1 ring-foreground/10">
-                  <p className="text-sm font-medium">{labelItem(lang, item)}</p>
+                  <ItemUsage
+                    lang={lang}
+                    item={item}
+                    horizon="listed"
+                    mode="single"
+                    usage={period.usage}
+                  />
                   <ul className="mt-2 flex flex-col gap-1.5">
                     {cities.map((city) => {
                       const isBaseline = city.id === baselineCity?.id
-                      const model = cellModel({
-                        lang,
-                        city,
-                        item,
-                        unit,
-                        override: overrides[city.id],
-                        baselineValue,
-                        isBaseline,
-                      })
+                      const model = blocked
+                        ? null
+                        : cellModel({
+                            lang,
+                            city,
+                            item,
+                            unit,
+                            period,
+                            override: overrides[city.id],
+                            baselineValue,
+                            isBaseline,
+                          })
                       return (
                         <li
                           key={city.id}
@@ -480,7 +511,9 @@ function CompareCards({
                             {city.name}
                           </span>
                           <span className="flex shrink-0 items-center gap-1.5">
-                            {model.kind === "reason" ? (
+                            {model === null ? (
+                              <span>—</span>
+                            ) : model.kind === "reason" ? (
                               <span className="text-xs text-muted-foreground">{model.text}</span>
                             ) : (
                               <>

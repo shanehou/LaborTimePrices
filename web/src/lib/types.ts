@@ -34,6 +34,9 @@ export type ExclusionCode =
   | "missing_item"
   | "non_positive_price"
   | "non_positive_quantity"
+  | "needs_times"
+  | "needs_years"
+  | "needs_area"
 
 export type Exclusion = {
   code: ExclusionCode

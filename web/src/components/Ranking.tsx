@@ -18,6 +18,7 @@ import {
 } from "@/i18n"
 import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
 import { rankCities } from "@/lib/labor"
+import { firstUsageBlock, type PeriodContext } from "@/lib/period"
 import type { BasketLine, CityRecord } from "@/lib/types"
 
 type RankingProps = {
@@ -25,6 +26,7 @@ type RankingProps = {
   cities: CityRecord[]
   lines: BasketLine[]
   overrides: Record<string, number>
+  period: PeriodContext
   customEmpty: boolean
   // Passed only by the item-comparison tab, where the visitor picks one item.
   target?: string
@@ -37,6 +39,7 @@ export function Ranking({
   cities,
   lines,
   overrides,
+  period,
   customEmpty,
   target,
   onTarget,
@@ -44,8 +47,11 @@ export function Ranking({
 }: RankingProps) {
   const pickerItems = items ?? []
   const showPicker = target !== undefined && onTarget !== undefined
+  const block = firstUsageBlock(lines, period)
   const result =
-    customEmpty || lines.length === 0 ? null : rankCities(cities, lines, overrides)
+    block || customEmpty || lines.length === 0
+      ? null
+      : rankCities(cities, lines, overrides, period)
 
   return (
     <section className="flex flex-col gap-4">
@@ -78,7 +84,9 @@ export function Ranking({
           </Select>
         </div>
       )}
-      {cities.length === 0 ? (
+      {block ? (
+        <p className="text-sm text-muted-foreground">{exclusionMessage(lang, block)}</p>
+      ) : cities.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t(lang, "rankEmptySelection")}</p>
       ) : customEmpty ? (
         <p className="text-sm text-muted-foreground">{t(lang, "basketEmpty")}</p>

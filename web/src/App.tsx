@@ -4,17 +4,22 @@ import { ComboPanel, CUSTOM_TARGET, PRESET_TARGET } from "@/components/ComboPane
 import { CompareTable, type PriceUnit } from "@/components/CompareTable"
 import { HoursEditor } from "@/components/HoursEditor"
 import { Ranking } from "@/components/Ranking"
+import { ShareDialog } from "@/components/ShareDialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { BASKETS, ITEMS } from "@/data/items"
 import { apiErrorMessage, formatMessage, t, type Lang } from "@/i18n"
 import { ApiError, fetchCatalog, fetchCity, type ApiErrorCode } from "@/lib/api"
+import { buildComboCsv, buildItemsCsv, comboFilename, itemsFilename } from "@/lib/exportCsv"
 import { formatDate } from "@/lib/format"
 import { groupCatalog, listCatalog } from "@/lib/labor"
+import { emptyUsage, type Horizon, type PeriodContext, type Usage } from "@/lib/period"
 import { linesForTarget, type CustomBasket } from "@/lib/rankTarget"
 import { moveItem } from "@/lib/reorder"
-import { readHourOverrides, writeHourOverride, writeLang } from "@/lib/storage"
+import { buildShareCard } from "@/lib/shareCard"
+import { decodeShare, encodeShare } from "@/lib/share"
+import { readHourOverrides, readPeriod, writeHourOverride, writeLang, writePeriod } from "@/lib/storage"
 import type { CatalogCity, CityRecord, CityLoadStatus } from "@/lib/types"
 
 const activeLangClass =
@@ -34,19 +39,79 @@ function errorCode(error: unknown): ApiErrorCode {
   return error instanceof ApiError ? error.code : "network"
 }
 
+function ViewTab({
+  selected,
+  title,
+  hint,
+  onSelect,
+}: {
+  selected: boolean
+  title: string
+  hint: string
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={`rounded-lg px-3 py-3 text-left ${
+        selected ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-background/70"
+      }`}
+    >
+      <span className="block text-sm font-medium md:text-base">{title}</span>
+      <span
+        className={`mt-1 block text-xs leading-snug ${
+          selected ? "text-primary-foreground/80" : "text-muted-foreground"
+        }`}
+      >
+        {hint}
+      </span>
+    </button>
+  )
+}
+
+function readOpenedShare() {
+  if (typeof window === "undefined") return null
+  return decodeShare(window.location.hash)
+}
+
 export default function App({ startupLang }: { startupLang: Lang }) {
-  const [lang, setLang] = useState<Lang>(startupLang)
+  const [openedShare] = useState(readOpenedShare)
+  const [lang, setLang] = useState<Lang>(openedShare?.lang ?? startupLang)
   const [cityCatalog, setCityCatalog] = useState<CatalogCity[] | null>(null)
   const [catalogError, setCatalogError] = useState<ApiErrorCode | null>(null)
   const [catalogAttempt, setCatalogAttempt] = useState(0)
-  const [selected, setSelected] = useState<CatalogCity[]>([])
-  const [cityStates, setCityStates] = useState<Record<string, CityLoadState>>({})
-  const [overrides, setOverrides] = useState(readHourOverrides)
-  const [unit, setUnit] = useState<PriceUnit>("hours")
-  const [tab, setTab] = useState<"items" | "combos">("items")
-  const [itemTarget, setItemTarget] = useState(`item:${ITEMS.coffee}`)
-  const [comboTarget, setComboTarget] = useState<string>(PRESET_TARGET)
-  const [custom, setCustom] = useState<CustomBasket>({})
+  const [selected, setSelected] = useState<CatalogCity[]>(() =>
+    (openedShare?.cities ?? []).map((city) => ({ id: city.id, name: city.name, country: "" })),
+  )
+  const [cityStates, setCityStates] = useState<Record<string, CityLoadState>>(() => {
+    if (!openedShare) return {}
+    return Object.fromEntries(
+      openedShare.cities.map((city) => [city.id, { status: "loading" as const }]),
+    )
+  })
+  const [overrides, setOverrides] = useState(() => {
+    const base = readHourOverrides()
+    if (!openedShare) return base
+    let next = base
+    for (const [cityId, hours] of Object.entries(openedShare.hours)) {
+      next = writeHourOverride(cityId, hours)
+    }
+    return next
+  })
+  const [unit, setUnit] = useState<PriceUnit>(openedShare?.unit ?? "hours")
+  const [tab, setTab] = useState<"items" | "combos">(openedShare?.tab ?? "items")
+  const [horizon, setHorizon] = useState<Horizon>(
+    openedShare?.horizon ?? readPeriod().horizon,
+  )
+  const [usage, setUsage] = useState<Usage>(openedShare ? openedShare.usage : readPeriod().usage)
+  const [itemTarget, setItemTarget] = useState(openedShare?.itemTarget ?? `item:${ITEMS.coffee}`)
+  const [comboTarget, setComboTarget] = useState<string>(openedShare?.comboTarget ?? PRESET_TARGET)
+  const [custom, setCustom] = useState<CustomBasket>(openedShare?.custom ?? {})
+  const [customName, setCustomName] = useState(openedShare?.customName ?? "")
+  const [shareOpen, setShareOpen] = useState(false)
   const controllers = useRef(new Map<string, AbortController>())
 
   useEffect(() => {
@@ -68,6 +133,10 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   }, [lang])
 
   useEffect(() => {
+    writePeriod({ horizon, usage })
+  }, [horizon, usage])
+
+  useEffect(() => {
     const inflight = controllers.current
     return () => {
       for (const controller of inflight.values()) controller.abort()
@@ -75,11 +144,10 @@ export default function App({ startupLang }: { startupLang: Lang }) {
     }
   }, [])
 
-  const loadCity = useCallback((city: CatalogCity) => {
+  const requestCity = useCallback((city: CatalogCity) => {
     controllers.current.get(city.id)?.abort()
     const controller = new AbortController()
     controllers.current.set(city.id, controller)
-    setCityStates((current) => ({ ...current, [city.id]: { status: "loading" } }))
     fetchCity(city.id, controller.signal)
       .then((record) => {
         if (!controller.signal.aborted) {
@@ -87,6 +155,13 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             ...current,
             [city.id]: { status: "ready", city: record },
           }))
+          setSelected((current) =>
+            current.map((entry) =>
+              entry.id === record.id
+                ? { id: record.id, name: record.name, country: record.country }
+                : entry,
+            ),
+          )
         }
       })
       .catch((error: unknown) => {
@@ -102,6 +177,22 @@ export default function App({ startupLang }: { startupLang: Lang }) {
         }
       })
   }, [])
+
+  const loadCity = useCallback(
+    (city: CatalogCity) => {
+      setCityStates((current) => ({ ...current, [city.id]: { status: "loading" } }))
+      requestCity(city)
+    },
+    [requestCity],
+  )
+
+  useEffect(() => {
+    if (!openedShare) return
+    if (openedShare.lang) writeLang(openedShare.lang)
+    for (const city of openedShare.cities) {
+      requestCity({ id: city.id, name: city.name, country: "" })
+    }
+  }, [openedShare, requestCity])
 
   function addCity(city: CatalogCity) {
     setSelected((current) =>
@@ -126,14 +217,19 @@ export default function App({ startupLang }: { startupLang: Lang }) {
     setSelected((current) => moveItem(current, from, to))
   }
 
+  const visibleCities = useMemo(() => {
+    if (!cityCatalog) return selected
+    return selected.map((city) => cityCatalog.find((entry) => entry.id === city.id) ?? city)
+  }, [selected, cityCatalog])
+
   const readyCities = useMemo(() => {
     const cities: CityRecord[] = []
-    for (const city of selected) {
+    for (const city of visibleCities) {
       const state = cityStates[city.id]
       if (state && state.status === "ready") cities.push(state.city)
     }
     return cities
-  }, [selected, cityStates])
+  }, [visibleCities, cityStates])
 
   const statuses = useMemo(() => {
     const next: Record<string, CityLoadStatus> = {}
@@ -145,13 +241,13 @@ export default function App({ startupLang }: { startupLang: Lang }) {
 
   const pending = useMemo(() => {
     const rows: PendingCity[] = []
-    for (const city of selected) {
+    for (const city of visibleCities) {
       const state = cityStates[city.id]
       if (!state || state.status === "ready") continue
       rows.push({ city, state })
     }
     return rows
-  }, [selected, cityStates])
+  }, [visibleCities, cityStates])
 
   const catalogEntries = useMemo(() => listCatalog(readyCities), [readyCities])
   const groups = useMemo(() => groupCatalog(catalogEntries), [catalogEntries])
@@ -179,6 +275,86 @@ export default function App({ startupLang }: { startupLang: Lang }) {
 
   const itemLines = linesForTarget(effectiveItemTarget, custom)
   const comboLines = linesForTarget(comboTarget, custom)
+  const itemPeriod: PeriodContext = { horizon: "listed", mode: "single", usage: emptyUsage() }
+  const activeLines = tab === "items" ? itemLines : comboLines
+  const shareHorizon = tab === "items" ? "listed" : horizon
+
+  const shareHash = useMemo(
+    () =>
+      encodeShare({
+        cities: visibleCities.map((city) => ({ id: city.id, name: city.name })),
+        hours: overrides,
+        lang,
+        tab,
+        unit,
+        horizon,
+        itemTarget: effectiveItemTarget,
+        comboTarget,
+        custom,
+        customName,
+        usage,
+      }),
+    [
+      visibleCities,
+      overrides,
+      lang,
+      tab,
+      unit,
+      horizon,
+      effectiveItemTarget,
+      comboTarget,
+      custom,
+      customName,
+      usage,
+    ],
+  )
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const next = `#${shareHash}`
+      if (window.location.hash === next) return
+      window.history.replaceState(null, "", next)
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [shareHash])
+
+  const shareModel = useMemo(
+    () =>
+      buildShareCard({
+        lang,
+        tab,
+        horizon: shareHorizon,
+        cities: readyCities,
+        overrides,
+        comboTarget,
+        customName,
+        lines: activeLines,
+        usage,
+      }),
+    [lang, tab, shareHorizon, readyCities, overrides, comboTarget, customName, activeLines, usage],
+  )
+
+  const shareCsv = useMemo(
+    () =>
+      tab === "items"
+        ? buildItemsCsv({
+            lang,
+            cities: readyCities,
+            items,
+            overrides,
+            horizon: "listed",
+            usage: emptyUsage(),
+          })
+        : buildComboCsv({
+            lang,
+            cities: readyCities,
+            lines: comboLines,
+            overrides,
+            horizon,
+            usage,
+          }),
+    [tab, lang, readyCities, items, comboLines, overrides, horizon, usage],
+  )
 
   function editFromPreset() {
     setCustom(
@@ -268,13 +444,13 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                 <CitySelect
                   lang={lang}
                   catalog={cityCatalog}
-                  selected={selected}
+                  selected={visibleCities}
                   statuses={statuses}
                   onAdd={addCity}
                   onRemove={removeCity}
                   onReorder={reorderCity}
                 />
-                {selected.length === 0 ? (
+                {visibleCities.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     {t(lang, "emptySelectionHint")}
                   </p>
@@ -317,34 +493,48 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                 />
               </CardContent>
             </Card>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              value={tab}
-              aria-label={t(lang, "viewLabel")}
-              onValueChange={(value) => {
-                if (value === "items" || value === "combos") setTab(value)
-              }}
-              className="self-start"
+            <section
+              className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10"
+              data-view={tab}
             >
-              <ToggleGroupItem value="items" className={activeLangClass}>
-                {t(lang, "tabItems")}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="combos" className={activeLangClass}>
-                {t(lang, "tabCombos")}
-              </ToggleGroupItem>
-            </ToggleGroup>
-            {tab === "items" ? (
-              <>
-                <CompareTable
-                  lang={lang}
-                  cities={readyCities}
-                  overrides={overrides}
-                  unit={unit}
-                  onUnit={setUnit}
-                />
-                <Card>
-                  <CardContent>
+              <div className="flex flex-col gap-3 border-b border-border bg-secondary/60 p-3 md:flex-row md:items-stretch">
+                <div
+                  role="tablist"
+                  aria-label={t(lang, "viewLabel")}
+                  className="grid flex-1 grid-cols-2 gap-1"
+                >
+                  <ViewTab
+                    selected={tab === "items"}
+                    title={t(lang, "tabItems")}
+                    hint={t(lang, "tabItemsHint")}
+                    onSelect={() => setTab("items")}
+                  />
+                  <ViewTab
+                    selected={tab === "combos"}
+                    title={t(lang, "tabCombos")}
+                    hint={t(lang, "tabCombosHint")}
+                    onSelect={() => setTab("combos")}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="bg-card md:self-center"
+                  onClick={() => setShareOpen(true)}
+                >
+                  {t(lang, "share")}
+                </Button>
+              </div>
+              <div role="tabpanel" className="flex flex-col gap-8 p-4 md:p-6">
+                {tab === "items" ? (
+                  <>
+                    <CompareTable
+                      lang={lang}
+                      cities={readyCities}
+                      overrides={overrides}
+                      unit={unit}
+                      onUnit={setUnit}
+                    />
                     <Ranking
                       lang={lang}
                       target={effectiveItemTarget}
@@ -353,36 +543,56 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                       lines={itemLines}
                       customEmpty={false}
                       overrides={overrides}
+                      period={itemPeriod}
                       items={items}
                     />
-                  </CardContent>
-                </Card>
-              </>
-            ) : (
-              <ComboPanel
-                lang={lang}
-                cities={readyCities}
-                overrides={overrides}
-                target={comboTarget}
-                onTarget={setComboTarget}
-                lines={comboLines}
-                custom={custom}
-                onToggle={(item, checked) =>
-                  setCustom((current) => ({
-                    ...current,
-                    [item]: { checked, quantity: current[item]?.quantity ?? "1" },
-                  }))
-                }
-                onQuantity={(item, quantity) =>
-                  setCustom((current) => ({
-                    ...current,
-                    [item]: { checked: current[item]?.checked ?? false, quantity },
-                  }))
-                }
-                onEditFromPreset={editFromPreset}
-                groups={groups}
-              />
-            )}
+                  </>
+                ) : (
+                  <ComboPanel
+                    lang={lang}
+                    cities={readyCities}
+                    overrides={overrides}
+                    target={comboTarget}
+                    onTarget={setComboTarget}
+                    lines={comboLines}
+                    custom={custom}
+                    customName={customName}
+                    onCustomName={setCustomName}
+                    horizon={horizon}
+                    onHorizon={setHorizon}
+                    usage={usage}
+                    onUsage={setUsage}
+                    onToggle={(item, checked) =>
+                      setCustom((current) => {
+                        const existing = current[item]?.quantity
+                        const quantity = existing !== undefined && existing.trim() !== "" ? existing : "1"
+                        return {
+                          ...current,
+                          [item]: { checked, quantity },
+                        }
+                      })
+                    }
+                    onQuantity={(item, quantity) =>
+                      setCustom((current) => ({
+                        ...current,
+                        [item]: { checked: current[item]?.checked ?? false, quantity },
+                      }))
+                    }
+                    onEditFromPreset={editFromPreset}
+                    groups={groups}
+                  />
+                )}
+              </div>
+            </section>
+            <ShareDialog
+              lang={lang}
+              open={shareOpen}
+              onOpenChange={setShareOpen}
+              model={shareModel}
+              csv={shareCsv}
+              filename={tab === "items" ? itemsFilename(horizon) : comboFilename(horizon)}
+              shareHash={shareHash}
+            />
           </>
         )}
       </main>

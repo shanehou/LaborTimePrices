@@ -1,0 +1,257 @@
+import { cadenceOf } from "../data/cadence"
+import {
+  exclusionMessage,
+  formatMessage,
+  labelItem,
+  t,
+  type Lang,
+} from "../i18n"
+import { percentDelta } from "./compare"
+import { formatPlain } from "./format"
+import { evaluateBasket, findPrice, laborHoursForPrice, resolveMonthlyHours } from "./labor"
+import {
+  firstUsageBlock,
+  horizonFactor,
+  lineSpendUsd,
+  purchaseYears,
+  usageBlock,
+  type Horizon,
+  type PeriodContext,
+  type Usage,
+} from "./period"
+
+import type { BasketLine, CityRecord } from "./types"
+
+function csvCell(value: string): string {
+  if (/[",\r\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`
+  return value
+}
+
+function csvNumber(value: number): string {
+  const rounded = Math.round(value * 100) / 100
+  return Object.is(rounded, -0) ? "0" : String(rounded)
+}
+
+function csvPercent(ratio: number | null): string {
+  if (ratio === null || !Number.isFinite(ratio)) return ""
+  const percent = Math.round(ratio * 100)
+  if (percent === 0) return "0%"
+  return `${percent > 0 ? "+" : ""}${percent}%`
+}
+
+export function cadenceLabel(lang: Lang, item: string): string {
+  switch (cadenceOf(item)) {
+    case "monthly":
+      return t(lang, "cadenceMonthly")
+    case "yearly":
+      return t(lang, "cadenceYearly")
+    case "asset":
+      return t(lang, "cadenceAsset")
+    case "assetArea":
+      return t(lang, "cadenceArea")
+    default:
+      return t(lang, "cadenceUnit")
+  }
+}
+
+export function usageText(
+  lang: Lang,
+  item: string,
+  quantity: number,
+  period: PeriodContext,
+): string {
+  const block = usageBlock(item, quantity, period)
+  if (block) return exclusionMessage(lang, block)
+  const cadence = cadenceOf(item)
+  const factor = horizonFactor(cadence, period.horizon)
+  const factorText =
+    factor === "x12" ? t(lang, "factorTimes12") : factor === "div12" ? t(lang, "factorDiv12") : ""
+  if (period.horizon === "listed") return cadenceLabel(lang, item)
+  if (cadence === "unit") {
+    const times = period.mode === "single" ? period.usage.times[item] : quantity
+    return times === undefined ? "" : String(times)
+  }
+  if (cadence === "asset") {
+    const count = period.mode === "single" ? 1 : quantity
+    return `${count} / ${period.usage.years[item]}`
+  }
+  if (cadence === "assetArea") {
+    const area = period.mode === "single" ? period.usage.area[item] : quantity
+    return `${area} / ${period.usage.years[item]}`
+  }
+  return [cadenceLabel(lang, item), factorText].filter(Boolean).join(" ")
+}
+
+type Figures = {
+  usd: string
+  hours: string
+  usdValue: number | null
+  hoursValue: number | null
+}
+
+function cityFigures(
+  lang: Lang,
+  city: CityRecord,
+  item: string,
+  quantity: number,
+  period: PeriodContext,
+  override: number | undefined,
+): Figures {
+  if (usageBlock(item, quantity, period)) {
+    return { usd: "", hours: "", usdValue: null, hoursValue: null }
+  }
+  const price = findPrice(city, item)
+  if (!price || !(price.price_usd > 0)) {
+    const reason = !price
+      ? exclusionMessage(lang, { code: "missing_item", item })
+      : exclusionMessage(lang, { code: "non_positive_price", item })
+    return { usd: reason, hours: "", usdValue: null, hoursValue: null }
+  }
+  const spent = lineSpendUsd(price.price_usd, item, quantity, period)
+  if (!spent.ok) {
+    return { usd: exclusionMessage(lang, spent.reason), hours: "", usdValue: null, hoursValue: null }
+  }
+  const resolved = resolveMonthlyHours(city, override)
+  const salary = city.monthly_net_salary
+  if (!resolved.ok || salary === null || !(salary > 0)) {
+    return { usd: csvNumber(spent.usd), hours: "", usdValue: spent.usd, hoursValue: null }
+  }
+  const hours = laborHoursForPrice(spent.usd, salary, resolved.hours)
+  return {
+    usd: csvNumber(spent.usd),
+    hours: csvNumber(hours),
+    usdValue: spent.usd,
+    hoursValue: hours,
+  }
+}
+
+function relative(figure: Figures, baseline: Figures | undefined): string {
+  if (!baseline) return ""
+  if (figure.hoursValue !== null && baseline.hoursValue !== null) {
+    return csvPercent(percentDelta(figure.hoursValue, baseline.hoursValue))
+  }
+  if (figure.usdValue !== null && baseline.usdValue !== null) {
+    return csvPercent(percentDelta(figure.usdValue, baseline.usdValue))
+  }
+  return ""
+}
+
+function serialize(rows: string[][]): string {
+  return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`
+}
+
+/** How a combo line's quantity should read, including floor area and years. */
+export function describeQuantity(
+  lang: Lang,
+  item: string,
+  quantity: number,
+  horizon: Horizon,
+  years: number | undefined,
+): string {
+  const cadence = cadenceOf(item)
+  const amount = Number.isFinite(quantity) && quantity > 0 ? formatPlain(lang, quantity, 2) : ""
+  if (horizon === "listed") return amount || "—"
+  if (cadence === "unit") {
+    return amount
+      ? formatMessage(t(lang, "qtyTimes"), { count: amount })
+      : t(lang, "reasonNeedsTimes")
+  }
+  if (cadence === "asset" || cadence === "assetArea") {
+    const count = amount
+      ? formatMessage(t(lang, cadence === "assetArea" ? "qtyArea" : "qtyPieces"), { count: amount })
+      : exclusionMessage(lang, {
+          code: cadence === "assetArea" ? "needs_area" : "non_positive_quantity",
+          item,
+        })
+    const span = formatMessage(t(lang, "qtyYears"), {
+      count: formatPlain(lang, purchaseYears(years), 2),
+    })
+    return `${count} · ${span}`
+  }
+  return amount || "—"
+}
+
+export function itemsFilename(horizon: Horizon): string {
+  return `ltp-items-${horizon}.csv`
+}
+
+export function comboFilename(horizon: Horizon): string {
+  return `ltp-combo-${horizon}.csv`
+}
+
+export function buildItemsCsv(input: {
+  lang: Lang
+  cities: CityRecord[]
+  items: string[]
+  overrides: Record<string, number>
+  horizon: Horizon
+  usage: Usage
+}): string {
+  const period: PeriodContext = { horizon: input.horizon, mode: "single", usage: input.usage }
+  const header = [t(input.lang, "csvItem"), t(input.lang, "csvCadence"), t(input.lang, "csvUsage")]
+  for (const city of input.cities) {
+    header.push(
+      `${city.name} ${t(input.lang, "csvUsd")}`,
+      `${city.name} ${t(input.lang, "csvHours")}`,
+      `${city.name} ${t(input.lang, "csvPercent")}`,
+    )
+  }
+  const rows = [header]
+  for (const item of input.items) {
+    const figures = input.cities.map((city) =>
+      cityFigures(input.lang, city, item, 1, period, input.overrides[city.id]),
+    )
+    rows.push([
+      labelItem(input.lang, item),
+      cadenceLabel(input.lang, item),
+      usageText(input.lang, item, 1, period),
+      ...figures.flatMap((figure) => [figure.usd, figure.hours, relative(figure, figures[0])]),
+    ])
+  }
+  return serialize(rows)
+}
+
+export function buildComboCsv(input: {
+  lang: Lang
+  cities: CityRecord[]
+  lines: BasketLine[]
+  overrides: Record<string, number>
+  horizon: Horizon
+  usage: Usage
+}): string {
+  const period: PeriodContext = { horizon: input.horizon, mode: "combo", usage: input.usage }
+  const header = [t(input.lang, "csvItem"), t(input.lang, "csvCadence"), t(input.lang, "comboQty")]
+  for (const city of input.cities) {
+    header.push(`${city.name} ${t(input.lang, "csvUsd")}`, `${city.name} ${t(input.lang, "csvHours")}`)
+  }
+  const rows = [header]
+  for (const line of input.lines) {
+    const block = usageBlock(line.item, line.quantity, period)
+    const figures = input.cities.map((city) =>
+      cityFigures(input.lang, city, line.item, line.quantity, period, input.overrides[city.id]),
+    )
+    rows.push([
+      labelItem(input.lang, line.item),
+      cadenceLabel(input.lang, line.item),
+      block ? exclusionMessage(input.lang, block) : String(line.quantity),
+      ...figures.flatMap((figure) => [figure.usd, figure.hours]),
+    ])
+  }
+  const block = firstUsageBlock(input.lines, period)
+  if (block) {
+    rows.push([
+      t(input.lang, "comboTotal"),
+      "",
+      exclusionMessage(input.lang, block),
+      ...input.cities.flatMap(() => ["", ""]),
+    ])
+  } else {
+    const totals = input.cities.map((city) => {
+      const result = evaluateBasket(city, input.lines, input.overrides[city.id], period)
+      if (!result.ok) return [exclusionMessage(input.lang, result.reason), ""]
+      return [csvNumber(result.totalUsd), csvNumber(result.hours)]
+    })
+    rows.push([t(input.lang, "comboTotal"), "", "", ...totals.flat()])
+  }
+  return serialize(rows)
+}

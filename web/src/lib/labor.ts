@@ -1,3 +1,4 @@
+import { firstUsageBlock, lineSpendUsd, type PeriodContext } from "./period"
 import type {
   BasketLine,
   CityRecord,
@@ -80,9 +81,9 @@ export function findPrice(city: CityRecord, item: string) {
 }
 
 /**
- * Listed dollars divided by the hourly wage.
- * The listed price is used as-is: a yearly fee is not divided by 12,
- * and monthly rent is not converted to a year.
+ * Dollars divided by the hourly wage.
+ * A listed price is used as-is. Month/year conversion happens in lineSpendUsd
+ * before the dollars reach this function.
  */
 export function laborHoursForPrice(
   priceUsd: number,
@@ -97,7 +98,11 @@ export function evaluateBasket(
   city: CityRecord,
   lines: BasketLine[],
   visitorHours?: number,
+  period?: PeriodContext,
 ): LaborSuccess | LaborFailure {
+  const blocked = firstUsageBlock(lines, period)
+  if (blocked) return { ok: false, reason: blocked }
+
   const salaryProblem = salaryExclusion(city.monthly_net_salary)
   if (salaryProblem) {
     return { ok: false, reason: salaryProblem }
@@ -126,7 +131,9 @@ export function evaluateBasket(
         reason: { code: "non_positive_price", item: line.item },
       }
     }
-    totalUsd += price.price_usd * line.quantity
+    const spent = lineSpendUsd(price.price_usd, line.item, line.quantity, period)
+    if (!spent.ok) return { ok: false, reason: spent.reason }
+    totalUsd += spent.usd
   }
 
   const hourlyWage = city.monthly_net_salary! / resolved.hours
@@ -144,12 +151,13 @@ export function rankCities(
   cities: CityRecord[],
   lines: BasketLine[],
   visitorHoursByCity: Record<string, number | undefined>,
+  period?: PeriodContext,
 ): { ranked: RankedCity[]; excluded: ExcludedCity[] } {
   const ranked: RankedCity[] = []
   const excluded: ExcludedCity[] = []
 
   for (const city of cities) {
-    const result = evaluateBasket(city, lines, visitorHoursByCity[city.id])
+    const result = evaluateBasket(city, lines, visitorHoursByCity[city.id], period)
     if (result.ok) {
       ranked.push({
         city,
