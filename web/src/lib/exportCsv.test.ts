@@ -32,9 +32,9 @@ describe("csv export", () => {
     expect(itemsFilename("month")).toBe("ltp-items-month.csv")
     const rows = csv.slice(1).split("\r\n")
     expect(rows[0]).toContain("支出,口径,用量")
-    expect(rows[0]).toContain("Shanghai 美元")
+    expect(rows[0]).toContain("Shanghai USD")
     expect(rows[0]).toContain("Shanghai 劳动小时")
-    expect(rows[0]).toContain('"Zurich, ""A"" 美元"')
+    expect(rows[0]).toContain('"Zurich, ""A"" USD"')
     expect(rows[1]).toContain("卡布奇诺（常规杯）")
     expect(rows[1]).toContain("4,0.2,0%")
     expect(rows[1]).toContain("8,0.4,+100%")
@@ -80,5 +80,23 @@ describe("csv export", () => {
     )
     expect(csv).toContain("Total")
     expect(csv).toContain("8,0.4")
+  })
+
+  it("converts displayed amounts and leaves labor hours in the USD calculation", () => {
+    const csv = buildItemsCsv({
+      lang: "en",
+      cities: [shanghai],
+      items: [ITEMS.coffee],
+      overrides: {},
+      horizon: "listed",
+      usage: emptyUsage(),
+      money: {
+        currency: "CNY",
+        rate: 2,
+        date: "2026-11-16",
+      },
+    })
+    expect(csv).toContain("Shanghai CNY")
+    expect(csv).toContain("8,0.2,0%")
   })
 })

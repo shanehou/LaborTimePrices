@@ -6,7 +6,8 @@ import {
   type Lang,
 } from "../i18n"
 import { describeQuantity, usageText } from "./exportCsv"
-import { formatLaborHours, formatUsd } from "./format"
+import { formatLaborHours, formatMoney } from "./format"
+import { USD_MONEY, type MoneyFormat } from "./money"
 import { evaluateBasket, type PriceView } from "./labor"
 import { firstUsageBlock, type Horizon, type PeriodContext, type Usage } from "./period"
 import { CUSTOM_TARGET } from "./rankTarget"
@@ -54,6 +55,7 @@ function cityRow(
   override: number | undefined,
   period: PeriodContext,
   view: PriceView,
+  money: MoneyFormat,
 ): ShareCardCity {
   const result = evaluateBasket(city, lines, override, period, view)
   if (!result.ok) {
@@ -67,7 +69,7 @@ function cityRow(
   return {
     name: city.name,
     primary: formatLaborHours(lang, result.hours),
-    secondary: formatUsd(lang, result.totalUsd),
+    secondary: formatMoney(lang, result.totalUsd, money),
     reason: null,
   }
 }
@@ -82,7 +84,9 @@ export function buildShareCard(input: {
   customName: string
   lines: BasketLine[]
   usage: Usage
+  money?: MoneyFormat
 }): ShareCardModel {
+  const money = input.money ?? USD_MONEY
   const mode = input.tab === "items" ? "single" : "combo"
   const period: PeriodContext = { horizon: input.horizon, mode, usage: input.usage }
   const view: PriceView = { lang: input.lang, prices: input.cities.flatMap((city) => city.prices) }
@@ -113,7 +117,7 @@ export function buildShareCard(input: {
         block || input.cities.length === 0
           ? []
           : input.cities.map((city) =>
-              cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view),
+              cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view, money),
             ),
       blocked: block ? exclusionMessage(input.lang, block) : null,
       empty: input.cities.length === 0 ? t(input.lang, "shareCardEmpty") : null,
@@ -148,7 +152,7 @@ export function buildShareCard(input: {
       block || input.cities.length === 0 || input.lines.length === 0
         ? []
         : input.cities.map((city) =>
-            cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view),
+            cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view, money),
           ),
     blocked: block
       ? exclusionMessage(input.lang, block)

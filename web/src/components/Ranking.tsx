@@ -16,7 +16,8 @@ import {
   t,
   type Lang,
 } from "@/i18n"
-import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
+import { formatLaborHours, formatMoney, formatPlain } from "@/lib/format"
+import { USD_MONEY, type MoneyFormat } from "@/lib/money"
 import { rankCities, type PriceView } from "@/lib/labor"
 import { firstUsageBlock, type PeriodContext } from "@/lib/period"
 import type { BasketLine, CityRecord } from "@/lib/types"
@@ -28,6 +29,7 @@ type RankingProps = {
   overrides: Record<string, number>
   period: PeriodContext
   customEmpty: boolean
+  money?: MoneyFormat
   // Passed only by the item-comparison tab, where the visitor picks one item.
   target?: string
   onTarget?: (target: string) => void
@@ -41,6 +43,7 @@ export function Ranking({
   overrides,
   period,
   customEmpty,
+  money = USD_MONEY,
   target,
   onTarget,
   items,
@@ -117,7 +120,7 @@ export function Ranking({
                 </div>
                 <div className="text-right">
                   <p className="font-heading text-xl nums">{formatLaborHours(lang, row.hours)}</p>
-                  <p className="text-sm text-muted-foreground nums">{formatUsd(lang, row.totalUsd)}</p>
+                  <p className="text-sm text-muted-foreground nums">{formatMoney(lang, row.totalUsd, money)}</p>
                 </div>
               </li>
             ))}

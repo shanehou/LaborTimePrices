@@ -1,4 +1,5 @@
 import { validateCatalogCity, validateCityRecord } from "./schema"
+import { parseFxTable, type FxTable } from "./money"
 import type { CatalogCity, CityRecord } from "./types"
 
 const API_BASE = "/api"
@@ -146,6 +147,13 @@ export async function fetchCity(id: string, signal?: AbortSignal): Promise<CityR
   const validated = validateCityRecord(body.city)
   if (!validated.ok) throw invalid("The city response was not in the expected format.")
   return validated.city
+}
+
+export async function fetchFx(signal?: AbortSignal): Promise<FxTable> {
+  const body = await requestJson(`${API_BASE}/fx`, signal)
+  const table = parseFxTable(body)
+  if (!table) throw invalid("The exchange rates were not in the expected format.")
+  return table
 }
 
 export async function searchCities(

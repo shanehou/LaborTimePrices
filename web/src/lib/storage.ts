@@ -1,10 +1,16 @@
 import { canonicalItemName } from "../data/measure"
 import type { Lang } from "../i18n"
+import { emptyLibrary, normalizeLibrary, type ComboLibrary } from "./combos"
+import { isCurrencyCode, parseFxTable, type CurrencyCode, type FxTable } from "./money"
 import { emptyUsage, type Horizon, type Usage } from "./period"
 
 const LANG_KEY = "ltp.lang"
 const HOURS_KEY = "ltp.workHours"
 const PERIOD_KEY = "ltp.period"
+const COMBOS_KEY = "ltp.combos"
+const LAST_HASH_KEY = "ltp.lastHash"
+const CURRENCY_KEY = "ltp.currency"
+const FX_KEY = "ltp.fx"
 
 export type StoredPeriod = {
   horizon: Horizon
@@ -112,4 +118,54 @@ export function readPeriod(): StoredPeriod {
 
 export function writePeriod(period: StoredPeriod) {
   storage()?.setItem(PERIOD_KEY, JSON.stringify(period))
+}
+
+export function readComboLibrary(): ComboLibrary {
+  const raw = storage()?.getItem(COMBOS_KEY)
+  if (!raw) return emptyLibrary()
+  try {
+    return normalizeLibrary(JSON.parse(raw) as unknown)
+  } catch {
+    return emptyLibrary()
+  }
+}
+
+export function writeComboLibrary(library: ComboLibrary) {
+  storage()?.setItem(COMBOS_KEY, JSON.stringify(normalizeLibrary(library)))
+}
+
+export function readLastHash(): string | null {
+  const value = storage()?.getItem(LAST_HASH_KEY)
+  return value && value.length > 0 ? value : null
+}
+
+export function writeLastHash(hash: string) {
+  const body = hash.startsWith("#") ? hash.slice(1) : hash
+  if (!body) return
+  storage()?.setItem(LAST_HASH_KEY, body)
+}
+
+export function readCurrency(): CurrencyCode {
+  const value = storage()?.getItem(CURRENCY_KEY)
+  return isCurrencyCode(value) ? value : "USD"
+}
+
+export function writeCurrency(currency: CurrencyCode) {
+  storage()?.setItem(CURRENCY_KEY, currency)
+}
+
+export function readFx(): FxTable | null {
+  const raw = storage()?.getItem(FX_KEY)
+  if (!raw) return null
+  try {
+    return parseFxTable(JSON.parse(raw) as unknown)
+  } catch {
+    return null
+  }
+}
+
+export function writeFx(table: FxTable) {
+  const parsed = parseFxTable(table)
+  if (!parsed) return
+  storage()?.setItem(FX_KEY, JSON.stringify(parsed))
 }

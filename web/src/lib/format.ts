@@ -1,17 +1,32 @@
 import type { Lang } from "../i18n"
 import { formatMessage, t } from "../i18n"
+import { USD_MONEY, type MoneyFormat } from "./money"
+
+const ZERO_DECIMAL = new Set(["JPY", "KRW"])
 
 function locale(lang: Lang) {
   return lang === "zh" ? "zh-CN" : "en-US"
 }
 
+export function formatMoney(lang: Lang, usdAmount: number, money: MoneyFormat = USD_MONEY): string {
+  const rate = Number.isFinite(money.rate) && money.rate > 0 ? money.rate : 1
+  const amount = usdAmount * rate
+  const currency = money.currency || "USD"
+  const digits = ZERO_DECIMAL.has(currency) ? 0 : Math.abs(amount) >= 100 ? 0 : 2
+  try {
+    return new Intl.NumberFormat(locale(lang), {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount)
+  } catch {
+    return formatMoney(lang, usdAmount, USD_MONEY)
+  }
+}
+
 export function formatUsd(lang: Lang, amount: number): string {
-  return new Intl.NumberFormat(locale(lang), {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: amount >= 100 ? 0 : 2,
-    maximumFractionDigits: amount >= 100 ? 0 : 2,
-  }).format(amount)
+  return formatMoney(lang, amount, USD_MONEY)
 }
 
 export function formatPlain(lang: Lang, value: number, digits: number): string {

@@ -2,6 +2,7 @@
 //
 //   GET /api/health
 //   GET /api/catalog
+//   GET /api/fx
 //   GET /api/search?q=<term>
 //   GET /api/city/:id
 //
@@ -23,6 +24,7 @@ import {
   writeJSON,
 } from "./cache.js"
 import { ApiError, errorResponse, jsonResponse } from "./errors.js"
+import { fetchFrankfurterRates, FX_KEY, FX_TTL_SECONDS, readFxTable } from "./fx.js"
 import {
   canonicalizePrices,
   isValidCityId,
@@ -34,6 +36,7 @@ import {
 const CATALOG_CACHE_CONTROL = "public, max-age=86400"
 const CITY_CACHE_CONTROL = "public, max-age=300"
 const SEARCH_CACHE_CONTROL = "public, max-age=86400"
+const FX_CACHE_CONTROL = "public, max-age=3600"
 const RATE_LIMIT_RETRY_AFTER = "60"
 
 export default {
@@ -62,6 +65,10 @@ async function route(request, env, context) {
 
   if (url.pathname === "/api/catalog") {
     return handleCatalog()
+  }
+
+  if (url.pathname === "/api/fx") {
+    return handleFx(env)
   }
 
   if (url.pathname === "/api/search") {
@@ -98,6 +105,25 @@ function rateLimitedResponse(message = "Rate limit exceeded") {
   const response = errorResponse("rate_limited", message, 429)
   response.headers.set("retry-after", RATE_LIMIT_RETRY_AFTER)
   return response
+}
+
+async function handleFx(env) {
+  const kv = env.CITY_CACHE
+  const cached = readFxTable(await readJSON(kv, FX_KEY))
+  if (cached) {
+    return jsonResponse(cached, { cacheControl: FX_CACHE_CONTROL })
+  }
+  try {
+    const fresh = await fetchFrankfurterRates()
+    await writeJSON(kv, FX_KEY, fresh, { expirationTtl: FX_TTL_SECONDS })
+    return jsonResponse(fresh, { cacheControl: FX_CACHE_CONTROL })
+  } catch (error) {
+    const apiError =
+      error instanceof ApiError
+        ? error
+        : new ApiError("upstream_unavailable", "Exchange rates are unavailable", 502)
+    return errorResponse(apiError.code, apiError.message, apiError.status)
+  }
 }
 
 async function handleSearch(request, url, env) {

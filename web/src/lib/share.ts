@@ -1,5 +1,6 @@
 import { ITEMS, NUMBEO_ITEMS } from "../data/items"
 import type { Lang } from "../i18n"
+import { isCurrencyCode, type CurrencyCode } from "./money"
 import { emptyUsage, type Horizon, type Usage } from "./period"
 import { CUSTOM_TARGET, PRESET_TARGET, type CustomBasket } from "./rankTarget"
 
@@ -17,6 +18,7 @@ export type ShareSnapshot = {
   custom: CustomBasket
   customName: string
   usage: Usage
+  currency: CurrencyCode
 }
 
 function itemIndex(item: string): number {
@@ -92,6 +94,7 @@ export function encodeShare(snapshot: ShareSnapshot): string {
   if (times) params.set("r", times)
   if (years) params.set("y", years)
   if (area) params.set("a", area)
+  if (snapshot.currency !== "USD") params.set("cur", snapshot.currency)
   return params.toString()
 }
 
@@ -116,6 +119,8 @@ export function decodeShare(hash: string): ShareSnapshot | null {
       ? NUMBEO_ITEMS[parsedItem]
       : null
   const comboTarget = params.get("bt") === "custom" ? CUSTOM_TARGET : PRESET_TARGET
+  const currencyParam = params.get("cur")
+  const currency: CurrencyCode = isCurrencyCode(currencyParam) ? currencyParam : "USD"
 
   const ids = (params.get("c") ?? "").split("|").filter((id) => id.length > 0)
   const names = (params.get("n") ?? "").split("|")
@@ -167,5 +172,6 @@ export function decodeShare(hash: string): ShareSnapshot | null {
     custom,
     customName: params.get("cn") ?? "",
     usage,
+    currency,
   }
 }

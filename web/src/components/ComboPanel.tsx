@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { BasketEditor } from "@/components/BasketEditor"
 import { HorizonToggle } from "@/components/HorizonBar"
 import { ItemUsage } from "@/components/ItemUsage"
@@ -17,10 +17,12 @@ import { BASKETS } from "@/data/items"
 import { CUSTOM_TARGET, PRESET_TARGET } from "@/lib/rankTarget"
 import { exclusionMessage, labelItem, t, type Lang } from "@/i18n"
 import { comboDetail } from "@/lib/combo"
+import type { ComboDraft, ComboMode, SavedCombo } from "@/lib/combos"
 import { describeQuantity } from "@/lib/exportCsv"
-import { formatLaborHours, formatUsd } from "@/lib/format"
+import { formatLaborHours, formatMoney } from "@/lib/format"
 import { priceUsdFor } from "@/data/measure"
 import { findPrice, evaluateBasket, type PriceView } from "@/lib/labor"
+import { USD_MONEY, type MoneyFormat } from "@/lib/money"
 import {
   lineSpendUsd,
   quantityFromField,
@@ -39,8 +41,10 @@ type ComboPanelProps = {
   lang: Lang
   cities: CityRecord[]
   overrides: Record<string, number>
-  target: string
-  onTarget: (target: string) => void
+  mode: ComboMode
+  activeId: string | null
+  combos: SavedCombo[]
+  draft: ComboDraft | null
   lines: BasketLine[]
   custom: CustomBasket
   customName: string
@@ -51,16 +55,29 @@ type ComboPanelProps = {
   onUsage: (usage: Usage) => void
   onToggle: (item: string, checked: boolean) => void
   onQuantity: (item: string, quantity: string) => void
+  onSelectPreset: () => void
+  onSelectSaved: (id: string) => void
+  onCreate: () => void
+  onDelete: (id: string) => void
+  onSaveDraft: () => void
   onEditFromPreset: () => void
+  atLimit: boolean
   groups: { category: string; items: string[] }[]
+  money?: MoneyFormat
+}
+
+function checkedEntries(basket: CustomBasket) {
+  return Object.entries(basket).filter(([, state]) => state.checked)
 }
 
 export function ComboPanel({
   lang,
   cities,
   overrides,
-  target,
-  onTarget,
+  mode,
+  activeId,
+  combos,
+  draft,
   lines,
   custom,
   customName,
@@ -71,14 +88,21 @@ export function ComboPanel({
   onUsage,
   onToggle,
   onQuantity,
+  onSelectPreset,
+  onSelectSaved,
+  onCreate,
+  onDelete,
+  onSaveDraft,
   onEditFromPreset,
+  atLimit,
   groups,
+  money = USD_MONEY,
 }: ComboPanelProps) {
-  const isCustom = target === CUSTOM_TARGET
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const editing = mode !== "preset"
   const period: PeriodContext = { horizon, mode: "combo", usage }
   const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   const rows = comboDetail(lines, cities, view)
-  const checked = Object.entries(custom).filter(([, state]) => state.checked)
 
   return (
     <section className="flex flex-col gap-8">
@@ -90,64 +114,108 @@ export function ComboPanel({
         <div className="grid gap-3 md:grid-cols-2">
           <ComboCard
             title={t(lang, "presetLiving")}
-            selected={!isCustom}
-            onSelect={() => onTarget(PRESET_TARGET)}
+            selected={mode === "preset"}
+            onSelect={onSelectPreset}
           >
             <ul className="flex flex-col gap-1">
               {BASKETS[0].lines.map((line) => (
                 <li key={line.item} className="text-sm text-muted-foreground">
-                    {labelItem(lang, line.item, view.prices)} × {line.quantity}
+                  {labelItem(lang, line.item, view.prices)} × {line.quantity}
                 </li>
               ))}
             </ul>
-            {!isCustom && (
+            {mode === "preset" && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="self-start"
+                disabled={atLimit}
                 onClick={onEditFromPreset}
               >
                 {t(lang, "comboEditFromPreset")}
               </Button>
             )}
           </ComboCard>
-          <ComboCard
-            title={customName.trim() || t(lang, "basketCustom")}
-            selected={isCustom}
-            onSelect={() => onTarget(CUSTOM_TARGET)}
-          >
-            <Input
-              value={customName}
-              placeholder={t(lang, "basketCustom")}
-              aria-label={t(lang, "customNameLabel")}
-              onFocus={() => onTarget(CUSTOM_TARGET)}
-              onChange={(event) => onCustomName(event.target.value.slice(0, 40))}
-            />
-            {checked.length > 0 ? (
-              <ul className="flex flex-col gap-1">
-                {checked.map(([item, state]) => (
-                  <li key={item} className="text-sm text-muted-foreground">
-                    {labelItem(lang, item, view.prices)} ·{" "}
-                    {describeQuantity(
-                      lang,
-                      item,
-                      quantityFromField(state.quantity),
-                      horizon,
-                      usage.years[item],
-                      view.prices,
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t(lang, "comboEmpty")}</p>
-            )}
-          </ComboCard>
+          {combos.map((combo) => {
+            const isSelected = mode === "saved" && combo.id === activeId
+            return (
+              <ComboCard
+                key={combo.id}
+                title={combo.name.trim() || t(lang, "basketCustom")}
+                selected={isSelected}
+                onSelect={() => {
+                  setConfirmId(null)
+                  onSelectSaved(combo.id)
+                }}
+              >
+                <ComboSummary
+                  lang={lang}
+                  basket={isSelected ? custom : combo.basket}
+                  name={isSelected ? customName : combo.name}
+                  editing={isSelected}
+                  horizon={horizon}
+                  usage={isSelected ? usage : { ...usage, years: combo.years }}
+                  prices={view.prices}
+                  onName={onCustomName}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onClick={() => {
+                    if (confirmId === combo.id) {
+                      setConfirmId(null)
+                      onDelete(combo.id)
+                      return
+                    }
+                    setConfirmId(combo.id)
+                  }}
+                >
+                  {confirmId === combo.id ? t(lang, "comboDeleteConfirm") : t(lang, "comboDelete")}
+                </Button>
+              </ComboCard>
+            )
+          })}
+          {mode === "draft" && draft && (
+            <ComboCard
+              title={customName.trim() || t(lang, "comboDraftTitle")}
+              selected
+              onSelect={() => undefined}
+            >
+              <ComboSummary
+                lang={lang}
+                basket={custom}
+                name={customName}
+                editing
+                horizon={horizon}
+                usage={usage}
+                prices={view.prices}
+                onName={onCustomName}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={atLimit}
+                onClick={onSaveDraft}
+              >
+                {t(lang, "comboSaveDraft")}
+              </Button>
+            </ComboCard>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" disabled={atLimit} onClick={onCreate}>
+            {t(lang, "comboNew")}
+          </Button>
+          {atLimit && <p className="text-sm text-muted-foreground">{t(lang, "comboLimit")}</p>}
         </div>
       </div>
 
-      {isCustom && (
+      {editing && (
         <BasketEditor
           lang={lang}
           groups={groups}
@@ -212,7 +280,7 @@ export function ComboPanel({
                             : lineSpendUsd(usd, row.item, row.quantity, period)
                         return (
                           <TableCell key={city.id} className="text-right nums">
-                            {spent && spent.ok ? formatUsd(lang, spent.usd) : "—"}
+                            {spent && spent.ok ? formatMoney(lang, spent.usd, money) : "—"}
                           </TableCell>
                         )
                       })}
@@ -232,7 +300,7 @@ export function ComboPanel({
                               {formatLaborHours(lang, result.hours)}
                             </span>
                             <span className="block text-xs text-muted-foreground">
-                              {formatUsd(lang, result.totalUsd)}
+                              {formatMoney(lang, result.totalUsd, money)}
                             </span>
                           </>
                         ) : (
@@ -256,9 +324,63 @@ export function ComboPanel({
         lines={lines}
         overrides={overrides}
         period={period}
-        customEmpty={isCustom && lines.length === 0}
+        customEmpty={editing && lines.length === 0}
+        money={money}
       />
     </section>
+  )
+}
+
+function ComboSummary({
+  lang,
+  basket,
+  name,
+  editing,
+  horizon,
+  usage,
+  prices,
+  onName,
+}: {
+  lang: Lang
+  basket: CustomBasket
+  name: string
+  editing: boolean
+  horizon: Horizon
+  usage: Usage
+  prices: PriceView["prices"]
+  onName: (name: string) => void
+}) {
+  const checked = checkedEntries(basket)
+  return (
+    <>
+      {editing && (
+        <Input
+          value={name}
+          placeholder={t(lang, "basketCustom")}
+          aria-label={t(lang, "customNameLabel")}
+          onChange={(event) => onName(event.target.value.slice(0, 40))}
+        />
+      )}
+      {checked.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {checked.map(([item, state]) => (
+            <li key={item} className="text-sm text-muted-foreground">
+              {labelItem(lang, item, prices)} ·{" "}
+              {describeQuantity(
+                lang,
+                item,
+                quantityFromField(state.quantity),
+                horizon,
+                usage.years[item],
+                prices,
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t(lang, "comboEmpty")}</p>
+      )}
+    </>
   )
 }
 

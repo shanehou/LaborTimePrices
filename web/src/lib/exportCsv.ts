@@ -9,6 +9,7 @@ import {
 } from "../i18n"
 import { percentDelta } from "./compare"
 import { formatPlain } from "./format"
+import { USD_MONEY, type MoneyFormat } from "./money"
 import { evaluateBasket, findPrice, laborHoursForPrice, resolveMonthlyHours } from "./labor"
 import {
   firstUsageBlock,
@@ -104,6 +105,7 @@ function cityFigures(
   period: PeriodContext,
   override: number | undefined,
   prices: readonly PriceSample[],
+  money: MoneyFormat,
 ): Figures {
   if (usageBlock(item, quantity, period)) {
     return { usd: "", hours: "", usdValue: null, hoursValue: null }
@@ -123,15 +125,20 @@ function cityFigures(
   const resolved = resolveMonthlyHours(city, override)
   const salary = city.monthly_net_salary
   if (!resolved.ok || salary === null || !(salary > 0)) {
-    return { usd: csvNumber(spent.usd), hours: "", usdValue: spent.usd, hoursValue: null }
+    return { usd: csvNumber(displayAmount(spent.usd, money)), hours: "", usdValue: spent.usd, hoursValue: null }
   }
   const hours = laborHoursForPrice(spent.usd, salary, resolved.hours)
   return {
-    usd: csvNumber(spent.usd),
+    usd: csvNumber(displayAmount(spent.usd, money)),
     hours: csvNumber(hours),
     usdValue: spent.usd,
     hoursValue: hours,
   }
+}
+
+function displayAmount(usd: number, money: MoneyFormat): number {
+  const rate = Number.isFinite(money.rate) && money.rate > 0 ? money.rate : 1
+  return usd * rate
 }
 
 function relative(figure: Figures, baseline: Figures | undefined): string {
@@ -197,13 +204,15 @@ export function buildItemsCsv(input: {
   overrides: Record<string, number>
   horizon: Horizon
   usage: Usage
+  money?: MoneyFormat
 }): string {
+  const money = input.money ?? USD_MONEY
   const period: PeriodContext = { horizon: input.horizon, mode: "single", usage: input.usage }
   const prices = input.cities.flatMap((city) => city.prices)
   const header = [t(input.lang, "csvItem"), t(input.lang, "csvCadence"), t(input.lang, "csvUsage")]
   for (const city of input.cities) {
     header.push(
-      `${city.name} ${t(input.lang, "csvUsd")}`,
+      `${city.name} ${money.currency}`,
       `${city.name} ${t(input.lang, "csvHours")}`,
       `${city.name} ${t(input.lang, "csvPercent")}`,
     )
@@ -211,7 +220,7 @@ export function buildItemsCsv(input: {
   const rows = [header]
   for (const item of input.items) {
     const figures = input.cities.map((city) =>
-      cityFigures(input.lang, city, item, 1, period, input.overrides[city.id], prices),
+      cityFigures(input.lang, city, item, 1, period, input.overrides[city.id], prices, money),
     )
     rows.push([
       labelItem(input.lang, item, prices),
@@ -230,19 +239,21 @@ export function buildComboCsv(input: {
   overrides: Record<string, number>
   horizon: Horizon
   usage: Usage
+  money?: MoneyFormat
 }): string {
+  const money = input.money ?? USD_MONEY
   const period: PeriodContext = { horizon: input.horizon, mode: "combo", usage: input.usage }
   const prices = input.cities.flatMap((city) => city.prices)
   const view = { lang: input.lang, prices }
   const header = [t(input.lang, "csvItem"), t(input.lang, "csvCadence"), t(input.lang, "comboQty")]
   for (const city of input.cities) {
-    header.push(`${city.name} ${t(input.lang, "csvUsd")}`, `${city.name} ${t(input.lang, "csvHours")}`)
+    header.push(`${city.name} ${money.currency}`, `${city.name} ${t(input.lang, "csvHours")}`)
   }
   const rows = [header]
   for (const line of input.lines) {
     const block = usageBlock(line.item, line.quantity, period)
     const figures = input.cities.map((city) =>
-      cityFigures(input.lang, city, line.item, line.quantity, period, input.overrides[city.id], prices),
+      cityFigures(input.lang, city, line.item, line.quantity, period, input.overrides[city.id], prices, money),
     )
     rows.push([
       labelItem(input.lang, line.item, prices),
@@ -263,7 +274,7 @@ export function buildComboCsv(input: {
     const totals = input.cities.map((city) => {
       const result = evaluateBasket(city, input.lines, input.overrides[city.id], period, view)
       if (!result.ok) return [exclusionMessage(input.lang, result.reason, prices), ""]
-      return [csvNumber(result.totalUsd), csvNumber(result.hours)]
+      return [csvNumber(displayAmount(result.totalUsd, money)), csvNumber(result.hours)]
     })
     rows.push([t(input.lang, "comboTotal"), "", "", ...totals.flat()])
   }

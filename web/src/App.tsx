@@ -7,19 +7,53 @@ import { Ranking } from "@/components/Ranking"
 import { ShareDialog } from "@/components/ShareDialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { BASKETS, ITEMS } from "@/data/items"
+import { ITEMS } from "@/data/items"
 import { apiErrorMessage, formatMessage, t, type Lang } from "@/i18n"
-import { ApiError, fetchCatalog, fetchCity, type ApiErrorCode } from "@/lib/api"
+import { ApiError, fetchCatalog, fetchCity, fetchFx, type ApiErrorCode } from "@/lib/api"
+import {
+  activeSaved,
+  appendCombo,
+  COMBO_LIMIT,
+  presetDraft,
+  removeCombo,
+  replaceCombo,
+  resolveComboSession,
+  type ComboDraft,
+  type ComboLibrary,
+  type ComboMode,
+} from "@/lib/combos"
 import { buildComboCsv, buildItemsCsv, comboFilename, itemsFilename } from "@/lib/exportCsv"
 import { formatDate } from "@/lib/format"
 import { groupCatalog, listCatalog } from "@/lib/labor"
 import { emptyUsage, type Horizon, type PeriodContext, type Usage } from "@/lib/period"
+import { fxRate, isCurrencyCode, moneyFormat, CURRENCIES, type CurrencyCode, type FxTable } from "@/lib/money"
 import { linesForTarget, type CustomBasket } from "@/lib/rankTarget"
 import { moveItem } from "@/lib/reorder"
 import { buildShareCard } from "@/lib/shareCard"
 import { decodeShare, encodeShare } from "@/lib/share"
-import { readHourOverrides, readPeriod, writeHourOverride, writeLang, writePeriod } from "@/lib/storage"
+import {
+  readComboLibrary,
+  readCurrency,
+  readFx,
+  readHourOverrides,
+  readLastHash,
+  readPeriod,
+  writeComboLibrary,
+  writeCurrency,
+  writeFx,
+  writeHourOverride,
+  writeLang,
+  writeLastHash,
+  writePeriod,
+} from "@/lib/storage"
 import type { CatalogCity, CityRecord, CityLoadStatus } from "@/lib/types"
 
 const activeLangClass =
@@ -34,6 +68,8 @@ type PendingCity = {
   city: CatalogCity
   state: { status: "loading" } | { status: "error"; code: ApiErrorCode }
 }
+
+const EMPTY_BASKET: CustomBasket = {}
 
 function errorCode(error: unknown): ApiErrorCode {
   return error instanceof ApiError ? error.code : "network"
@@ -77,8 +113,26 @@ function readOpenedShare() {
   return decodeShare(window.location.hash)
 }
 
+function bootApp() {
+  const share = readOpenedShare()
+  const hashBody = typeof window === "undefined" ? "" : window.location.hash.replace(/^#/, "")
+  const resolved = resolveComboSession({
+    library: readComboLibrary(),
+    hashBody,
+    lastHash: readLastHash(),
+    share,
+  })
+  if (resolved.persistLibrary) writeComboLibrary(resolved.persistLibrary)
+  if (resolved.persistHash) writeLastHash(resolved.persistHash)
+  return { share, session: resolved.session }
+}
+
 export default function App({ startupLang }: { startupLang: Lang }) {
-  const [openedShare] = useState(readOpenedShare)
+  const [boot] = useState(bootApp)
+  const openedShare = boot.share
+  const [library, setLibrary] = useState<ComboLibrary>(boot.session.library)
+  const [draft, setDraft] = useState<ComboDraft | null>(boot.session.draft)
+  const [comboMode, setComboMode] = useState<ComboMode>(boot.session.mode)
   const [lang, setLang] = useState<Lang>(openedShare?.lang ?? startupLang)
   const [cityCatalog, setCityCatalog] = useState<CatalogCity[] | null>(null)
   const [catalogError, setCatalogError] = useState<ApiErrorCode | null>(null)
@@ -108,9 +162,16 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   )
   const [usage, setUsage] = useState<Usage>(openedShare ? openedShare.usage : readPeriod().usage)
   const [itemTarget, setItemTarget] = useState(openedShare?.itemTarget ?? `item:${ITEMS.coffee}`)
-  const [comboTarget, setComboTarget] = useState<string>(openedShare?.comboTarget ?? PRESET_TARGET)
-  const [custom, setCustom] = useState<CustomBasket>(openedShare?.custom ?? {})
-  const [customName, setCustomName] = useState(openedShare?.customName ?? "")
+  const [requestedCurrency, setRequestedCurrency] = useState<CurrencyCode>(() => {
+    const fromShare = openedShare?.currency
+    if (fromShare && isCurrencyCode(fromShare)) {
+      writeCurrency(fromShare)
+      return fromShare
+    }
+    return readCurrency()
+  })
+  const [fx, setFx] = useState<FxTable | null>(() => readFx())
+  const [fxError, setFxError] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const controllers = useRef(new Map<string, AbortController>())
 
@@ -135,6 +196,22 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   useEffect(() => {
     writePeriod({ horizon, usage })
   }, [horizon, usage])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchFx(controller.signal)
+      .then((table) => {
+        if (controller.signal.aborted) return
+        writeFx(table)
+        setFx(table)
+        setFxError(false)
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setFxError(readFx() === null)
+      })
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
     const inflight = controllers.current
@@ -273,6 +350,16 @@ export default function App({ startupLang }: { startupLang: Lang }) {
     return latest
   }, [readyCities])
 
+  const activeCombo = activeSaved(library)
+  const editing = comboMode === "saved" ? activeCombo : comboMode === "draft" ? draft : null
+  const comboTarget = editing ? CUSTOM_TARGET : PRESET_TARGET
+  const custom: CustomBasket = editing?.basket ?? EMPTY_BASKET
+  const customName = editing?.name ?? ""
+  const comboUsage = useMemo<Usage>(
+    () => (editing ? { times: usage.times, area: usage.area, years: editing.years } : usage),
+    [editing, usage],
+  )
+  const money = useMemo(() => moneyFormat(requestedCurrency, fx), [requestedCurrency, fx])
   const itemLines = linesForTarget(effectiveItemTarget, custom)
   const comboLines = linesForTarget(comboTarget, custom)
   const itemPeriod: PeriodContext = { horizon: "listed", mode: "single", usage: emptyUsage() }
@@ -292,7 +379,8 @@ export default function App({ startupLang }: { startupLang: Lang }) {
         comboTarget,
         custom,
         customName,
-        usage,
+        usage: comboUsage,
+        currency: money.currency,
       }),
     [
       visibleCities,
@@ -305,18 +393,21 @@ export default function App({ startupLang }: { startupLang: Lang }) {
       comboTarget,
       custom,
       customName,
-      usage,
+      comboUsage,
+      money.currency,
     ],
   )
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const next = `#${shareHash}`
-      if (window.location.hash === next) return
-      window.history.replaceState(null, "", next)
+      if (window.location.hash !== next) {
+        window.history.replaceState(null, "", next)
+      }
+      if (comboMode !== "draft") writeLastHash(shareHash)
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [shareHash])
+  }, [shareHash, comboMode])
 
   const shareModel = useMemo(
     () =>
@@ -329,9 +420,10 @@ export default function App({ startupLang }: { startupLang: Lang }) {
         comboTarget,
         customName,
         lines: activeLines,
-        usage,
+        usage: comboUsage,
+        money,
       }),
-    [lang, tab, shareHorizon, readyCities, overrides, comboTarget, customName, activeLines, usage],
+    [lang, tab, shareHorizon, readyCities, overrides, comboTarget, customName, activeLines, comboUsage, money],
   )
 
   const shareCsv = useMemo(
@@ -344,6 +436,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             overrides,
             horizon: "listed",
             usage: emptyUsage(),
+            money,
           })
         : buildComboCsv({
             lang,
@@ -351,21 +444,45 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             lines: comboLines,
             overrides,
             horizon,
-            usage,
+            usage: comboUsage,
+            money,
           }),
-    [tab, lang, readyCities, items, comboLines, overrides, horizon, usage],
+    [tab, lang, readyCities, items, comboLines, overrides, horizon, comboUsage, money],
   )
 
+  function commitLibrary(next: ComboLibrary, mode: ComboMode) {
+    setLibrary(next)
+    setDraft(null)
+    setComboMode(mode)
+    writeComboLibrary(next)
+  }
+
+  function updateEditing(patch: Partial<ComboDraft>) {
+    if (comboMode === "draft" && draft) {
+      setDraft({ ...draft, ...patch })
+      return
+    }
+    if (comboMode !== "saved" || !activeCombo) return
+    const next = replaceCombo(library, {
+      ...activeCombo,
+      name: patch.name ?? activeCombo.name,
+      basket: patch.basket ?? activeCombo.basket,
+      years: patch.years ?? activeCombo.years,
+    })
+    setLibrary(next)
+    writeComboLibrary(next)
+  }
+
   function editFromPreset() {
-    setCustom(
-      Object.fromEntries(
-        BASKETS[0].lines.map((line) => [
-          line.item,
-          { checked: true, quantity: String(line.quantity) },
-        ]),
-      ),
-    )
-    setComboTarget(CUSTOM_TARGET)
+    const added = appendCombo(library, presetDraft(usage.years))
+    if (!added) return
+    commitLibrary(added.library, "saved")
+  }
+
+  function chooseCurrency(next: string) {
+    if (!isCurrencyCode(next) || fxRate(fx, next) === null) return
+    writeCurrency(next)
+    setRequestedCurrency(next)
   }
 
   function retryCatalog() {
@@ -388,21 +505,46 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             <p className="text-xs tracking-[0.22em] uppercase opacity-75">
               {t(lang, "brandKicker")}
             </p>
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              value={lang}
-              aria-label={t(lang, "langLabel")}
-              className="shrink-0 bg-[oklch(0.96_0.015_90)] text-[oklch(0.28_0.03_50)]"
-              onValueChange={chooseLang}
-            >
-              <ToggleGroupItem value="zh" className={activeLangClass}>
-                {t(lang, "langZh")}
-              </ToggleGroupItem>
-              <ToggleGroupItem value="en" className={activeLangClass}>
-                {t(lang, "langEn")}
-              </ToggleGroupItem>
-            </ToggleGroup>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Select value={money.currency} onValueChange={chooseCurrency}>
+                  <SelectTrigger
+                    aria-label={t(lang, "currencyLabel")}
+                    className="border-transparent bg-[oklch(0.96_0.015_90)] text-[oklch(0.28_0.03_50)]"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map((code) => (
+                        <SelectItem key={code} value={code} disabled={fxRate(fx, code) === null}>
+                          {code}
+                        </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  value={lang}
+                  aria-label={t(lang, "langLabel")}
+                  className="shrink-0 bg-[oklch(0.96_0.015_90)] text-[oklch(0.28_0.03_50)]"
+                  onValueChange={chooseLang}
+                >
+                  <ToggleGroupItem value="zh" className={activeLangClass}>
+                    {t(lang, "langZh")}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="en" className={activeLangClass}>
+                    {t(lang, "langEn")}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              {fx?.date && (
+                <p className="text-xs opacity-75">
+                  {formatMessage(t(lang, "fxAsOf"), { date: fx.date })}
+                </p>
+              )}
+              {fxError && <p className="max-w-64 text-right text-xs opacity-75">{t(lang, "fxUnavailable")}</p>}
+            </div>
           </div>
           <div className="max-w-3xl">
             <h1 className="font-heading text-5xl leading-[0.95] whitespace-pre-line md:text-7xl">
@@ -534,6 +676,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                       overrides={overrides}
                       unit={unit}
                       onUnit={setUnit}
+                      money={money}
                     />
                     <Ranking
                       lang={lang}
@@ -545,6 +688,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                       overrides={overrides}
                       period={itemPeriod}
                       items={items}
+                      money={money}
                     />
                   </>
                 ) : (
@@ -552,34 +696,61 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                     lang={lang}
                     cities={readyCities}
                     overrides={overrides}
-                    target={comboTarget}
-                    onTarget={setComboTarget}
+                    mode={comboMode}
+                    activeId={library.activeId}
+                    combos={library.combos}
+                    draft={draft}
                     lines={comboLines}
                     custom={custom}
                     customName={customName}
-                    onCustomName={setCustomName}
+                    onCustomName={(name) => updateEditing({ name: name.slice(0, 40) })}
                     horizon={horizon}
                     onHorizon={setHorizon}
-                    usage={usage}
-                    onUsage={setUsage}
-                    onToggle={(item, checked) =>
-                      setCustom((current) => {
-                        const existing = current[item]?.quantity
-                        const quantity = existing !== undefined && existing.trim() !== "" ? existing : "1"
-                        return {
-                          ...current,
-                          [item]: { checked, quantity },
-                        }
+                    usage={comboUsage}
+                    onUsage={(next) => {
+                      if (!editing) {
+                        setUsage(next)
+                        return
+                      }
+                      setUsage({ ...usage, times: next.times, area: next.area })
+                      updateEditing({ years: next.years })
+                    }}
+                    onToggle={(item, checked) => {
+                      const existing = custom[item]?.quantity
+                      const quantity = existing !== undefined && existing.trim() !== "" ? existing : "1"
+                      updateEditing({
+                        basket: { ...custom, [item]: { checked, quantity } },
+                      })
+                    }}
+                    onQuantity={(item, quantity) =>
+                      updateEditing({
+                        basket: {
+                          ...custom,
+                          [item]: { checked: custom[item]?.checked ?? false, quantity },
+                        },
                       })
                     }
-                    onQuantity={(item, quantity) =>
-                      setCustom((current) => ({
-                        ...current,
-                        [item]: { checked: current[item]?.checked ?? false, quantity },
-                      }))
-                    }
+                    onSelectPreset={() => commitLibrary({ ...library, activeId: null }, "preset")}
+                    onSelectSaved={(id) => commitLibrary({ ...library, activeId: id }, "saved")}
+                    onCreate={() => {
+                      const added = appendCombo(library, { name: "", basket: {}, years: {} })
+                      if (added) commitLibrary(added.library, "saved")
+                    }}
+                    onDelete={(id) => {
+                      const next = removeCombo(library, id)
+                      setLibrary(next)
+                      writeComboLibrary(next)
+                      if (comboMode === "saved" && library.activeId === id) setComboMode("preset")
+                    }}
+                    onSaveDraft={() => {
+                      if (!draft) return
+                      const added = appendCombo(library, draft)
+                      if (added) commitLibrary(added.library, "saved")
+                    }}
                     onEditFromPreset={editFromPreset}
+                    atLimit={library.combos.length >= COMBO_LIMIT}
                     groups={groups}
+                    money={money}
                   />
                 )}
               </div>

@@ -22,7 +22,8 @@ import {
   type Lang,
 } from "@/i18n"
 import { deltaTone, formatDeltaPercent, percentDelta } from "@/lib/compare"
-import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
+import { formatLaborHours, formatMoney, formatPlain } from "@/lib/format"
+import { USD_MONEY, type MoneyFormat } from "@/lib/money"
 import {
   evaluateBasket,
   groupCatalog,
@@ -43,6 +44,7 @@ type CompareTableProps = {
   overrides: Record<string, number>
   unit: PriceUnit
   onUnit: (unit: PriceUnit) => void
+  money?: MoneyFormat
 }
 
 const ITEM_COLUMN = "w-72"
@@ -57,6 +59,7 @@ export function CompareTable({
   overrides,
   unit,
   onUnit,
+  money = USD_MONEY,
 }: CompareTableProps) {
   const groups = groupCatalog(listCatalog(cities))
   const baselineCity = cities.length > 1 ? cities[0] : undefined
@@ -112,7 +115,9 @@ export function CompareTable({
             }}
           >
             <ToggleGroupItem value="hours">{t(lang, "unitHours")}</ToggleGroupItem>
-            <ToggleGroupItem value="usd">{t(lang, "unitUsd")}</ToggleGroupItem>
+            <ToggleGroupItem value="usd">
+              {formatMessage(t(lang, "unitMoney"), { code: money.currency })}
+            </ToggleGroupItem>
           </ToggleGroup>
         </div>
         <div className="hidden items-center gap-2 rounded-lg bg-muted/70 px-2 py-1 md:flex">
@@ -219,11 +224,11 @@ export function CompareTable({
                             <div
                               className="mt-1 truncate text-[10px] font-normal text-muted-foreground nums"
                               title={`${resolved.ok ? formatPlain(lang, resolved.hours, 2) : "—"}${
-                                wage !== null ? ` · ${formatUsd(lang, wage)}` : ""
+                                wage !== null ? ` · ${formatMoney(lang, wage, money)}` : ""
                               }`}
                             >
                               {resolved.ok ? formatPlain(lang, resolved.hours, 2) : "—"}
-                              {wage !== null ? ` · ${formatUsd(lang, wage)}` : ""}
+                              {wage !== null ? ` · ${formatMoney(lang, wage, money)}` : ""}
                             </div>
                           )}
                         </TableHead>
@@ -237,6 +242,7 @@ export function CompareTable({
                     <CategoryRows
                       key={group.category}
                       lang={lang}
+                      money={money}
                       category={group.category}
                       items={group.items}
                       cities={cities}
@@ -260,6 +266,7 @@ export function CompareTable({
               unit={unit}
               period={LISTED_PERIOD}
               baselineCity={baselineCity}
+              money={money}
             />
           </div>
         </>
@@ -278,6 +285,7 @@ function CategoryRows({
   period,
   baselineCity,
   showValues,
+  money,
 }: {
   lang: Lang
   category: string
@@ -288,6 +296,7 @@ function CategoryRows({
   period: PeriodContext
   baselineCity: CityRecord | undefined
   showValues: boolean
+  money: MoneyFormat
 }) {
   const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   return (
@@ -344,6 +353,7 @@ function CategoryRows({
                       isBaseline={isBaseline}
                       showValues={showValues}
                       view={view}
+                      money={money}
                     />
                   )}
                 </TableCell>
@@ -385,6 +395,7 @@ function cellModel({
   baselineValue,
   isBaseline,
   view,
+  money,
 }: {
   lang: Lang
   city: CityRecord
@@ -395,12 +406,13 @@ function cellModel({
   baselineValue: number | null
   isBaseline: boolean
   view: PriceView
+  money: MoneyFormat
 }): CellModel {
   const result = evaluateBasket(city, [{ item, quantity: 1 }], override, period, view)
   if (!result.ok) return { kind: "reason", text: exclusionMessage(lang, result.reason, view.prices) }
   const value = unit === "usd" ? result.totalUsd : result.hours
   const delta = !isBaseline && baselineValue !== null ? percentDelta(value, baselineValue) : null
-  const text = unit === "usd" ? formatUsd(lang, result.totalUsd) : formatLaborHours(lang, result.hours)
+  const text = unit === "usd" ? formatMoney(lang, result.totalUsd, money) : formatLaborHours(lang, result.hours)
   return { kind: "value", text, delta }
 }
 
@@ -416,6 +428,7 @@ function CellValue({
   isBaseline,
   showValues,
   view,
+  money,
 }: {
   lang: Lang
   city: CityRecord
@@ -428,8 +441,20 @@ function CellValue({
   isBaseline: boolean
   showValues: boolean
   view: PriceView
+  money: MoneyFormat
 }) {
-  const model = cellModel({ lang, city, item, unit, period, override, baselineValue, isBaseline, view })
+  const model = cellModel({
+    lang,
+    city,
+    item,
+    unit,
+    period,
+    override,
+    baselineValue,
+    isBaseline,
+    view,
+    money,
+  })
   if (model.kind === "reason") return <Reason>{model.text}</Reason>
   const showAbsolute = isBaseline || showValues || model.delta === null
   return (
@@ -455,6 +480,7 @@ function CompareCards({
   unit,
   period,
   baselineCity,
+  money,
 }: {
   lang: Lang
   groups: { category: string; items: string[] }[]
@@ -463,6 +489,7 @@ function CompareCards({
   unit: PriceUnit
   period: PeriodContext
   baselineCity: CityRecord | undefined
+  money: MoneyFormat
 }) {
   const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   return (
@@ -508,6 +535,7 @@ function CompareCards({
                             baselineValue,
                             isBaseline,
                             view,
+                            money,
                           })
                       return (
                         <li

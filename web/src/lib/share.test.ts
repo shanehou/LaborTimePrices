@@ -23,6 +23,7 @@ function snapshot(partial: Partial<ShareSnapshot> = {}): ShareSnapshot {
       [ITEMS.coffee]: { checked: true, quantity: "30" },
     },
     customName: "两人的月",
+    currency: "USD",
     usage: {
       ...emptyUsage(),
       times: { [ITEMS.coffee]: 30 },
@@ -72,5 +73,13 @@ describe("share hash", () => {
     expect(decoded?.usage.times).toEqual({})
     expect(decoded?.custom).toEqual({})
     expect(decoded?.itemTarget).toBe(`item:${ITEMS.coffee}`)
+  })
+
+  it("keeps a display currency and defaults an old link to USD", () => {
+    const encoded = encodeShare(snapshot({ currency: "CNY" }))
+    expect(encoded).toContain("cur=CNY")
+    expect(decodeShare(encoded)?.currency).toBe("CNY")
+    expect(decodeShare("s=1")?.currency).toBe("USD")
+    expect(encoded.match(/b=/g)).toHaveLength(1)
   })
 })

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { emptyUsage } from "./period"
-import { languageFromTag, readHourOverrides, readPeriod, writeHourOverride, writePeriod } from "./storage"
+import { languageFromTag, readComboLibrary, readCurrency, readHourOverrides, readPeriod, writeComboLibrary, writeCurrency, writeHourOverride, writePeriod } from "./storage"
 
 describe("languageFromTag", () => {
   it("uses Chinese only when the tag starts with zh", () => {
@@ -96,5 +96,35 @@ describe("writeHourOverride", () => {
         area: { "Price per Square Meter to Buy Apartment Outside of Centre": 80 },
       },
     })
+  })
+
+  it("stores named combos and ignores a broken library", () => {
+    const memory = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value)
+      },
+      removeItem: (key: string) => {
+        memory.delete(key)
+      },
+    })
+    writeComboLibrary({
+      activeId: "a",
+      combos: [
+        {
+          id: "a",
+          name: "月费",
+          basket: { coffee: { checked: true, quantity: "2" } },
+          years: { car: 9 },
+        },
+      ],
+    })
+    expect(readComboLibrary().combos[0]?.name).toBe("月费")
+    expect(readComboLibrary().activeId).toBe("a")
+    memory.set("ltp.combos", "{")
+    expect(readComboLibrary()).toEqual({ combos: [], activeId: null })
+    writeCurrency("CNY")
+    expect(readCurrency()).toBe("CNY")
   })
 })
