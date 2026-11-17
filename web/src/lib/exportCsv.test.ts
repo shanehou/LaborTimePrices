@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ITEMS } from "../data/items"
-import { buildComboCsv, buildItemsCsv, describeQuantity, itemsFilename } from "./exportCsv"
+import { buildComboCsv, buildItemsCsv, comboFilename, describeQuantity, itemsFilename } from "./exportCsv"
 import { emptyUsage } from "./period"
 import type { CityRecord } from "./types"
 
@@ -78,6 +78,17 @@ describe("csv export", () => {
     expect(describeQuantity("zh", "Price per Square Meter to Buy Apartment in City Centre", 70, "month", undefined)).toBe(
       "70 平方米 · 10 年",
     )
+    expect(
+      describeQuantity("zh", "Volkswagen Golf 1.5 (or Equivalent New Compact Car)", 1, "year", 8, undefined, {
+        rate: 3.5,
+        repayment: "principal",
+      }),
+    ).toBe("1 件 · 8 年 · 3.5% 等额本金")
+    expect(comboFilename("市中心外的月度生活")).toBe("市中心外的月度生活.csv")
+    expect(comboFilename('a/b:c*?"<>|')).toBe("a b c.csv")
+    expect(comboFilename("   ")).toBe("combo.csv")
+    expect(comboFilename("名".repeat(90))).toBe(`${"名".repeat(80)}.csv`)
+    expect(comboFilename("hello.")).toBe("hello.csv")
     expect(csv).toContain("Total")
     expect(csv).toContain("8,0.4")
   })

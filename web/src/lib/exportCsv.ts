@@ -14,11 +14,13 @@ import { evaluateBasket, findPrice, laborHoursForPrice, resolveMonthlyHours } fr
 import {
   firstUsageBlock,
   horizonFactor,
+  isPositiveFinite,
   lineSpendUsd,
   purchaseYears,
   usageBlock,
   type Horizon,
   type PeriodContext,
+  type Repayment,
   type Usage,
 } from "./period"
 
@@ -81,11 +83,11 @@ export function usageText(
   }
   if (cadence === "asset") {
     const count = period.mode === "single" ? 1 : quantity
-    return `${count} / ${period.usage.years[item]}`
+    return `${count} / ${period.usage.years[item]}${financingSuffix(lang, period.usage, item)}`
   }
   if (cadence === "assetArea") {
     const area = period.mode === "single" ? period.usage.area[item] : quantity
-    return `${area} / ${period.usage.years[item]}`
+    return `${area} / ${period.usage.years[item]}${financingSuffix(lang, period.usage, item)}`
   }
   return [cadenceLabel(lang, item, prices), factorText].filter(Boolean).join(" ")
 }
@@ -156,7 +158,27 @@ function serialize(rows: string[][]): string {
   return `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`
 }
 
-/** How a combo line's quantity should read, including floor area and years. */
+export type PurchaseDetail = {
+  rate?: number
+  repayment?: Repayment
+}
+
+function financingSuffix(lang: Lang, usage: Usage, item: string): string {
+  return purchaseDetailSuffix(lang, {
+    rate: usage.rates[item],
+    repayment: usage.repayments[item],
+  })
+}
+
+function purchaseDetailSuffix(lang: Lang, detail?: PurchaseDetail): string {
+  const rate = detail?.rate
+  if (!isPositiveFinite(rate)) return ""
+  const percent = formatMessage(t(lang, "qtyRate"), { rate: formatPlain(lang, rate, 2) })
+  const mode = t(lang, detail?.repayment === "principal" ? "repayPrincipal" : "repayPayment")
+  return ` · ${percent} ${mode}`
+}
+
+/** How a combo line's quantity should read, including floor area, years, and interest. */
 export function describeQuantity(
   lang: Lang,
   item: string,
@@ -164,6 +186,7 @@ export function describeQuantity(
   horizon: Horizon,
   years: number | undefined,
   prices?: readonly PriceSample[],
+  financing?: PurchaseDetail,
 ): string {
   const cadence = cadenceOf(item)
   const amount = Number.isFinite(quantity) && quantity > 0 ? formatPlain(lang, quantity, 2) : ""
@@ -184,7 +207,7 @@ export function describeQuantity(
     const span = formatMessage(t(lang, "qtyYears"), {
       count: formatPlain(lang, purchaseYears(years), 2),
     })
-    return `${count} · ${span}`
+    return `${count} · ${span}${purchaseDetailSuffix(lang, financing)}`
   }
   return amount || "—"
 }
@@ -193,8 +216,15 @@ export function itemsFilename(horizon: Horizon): string {
   return `ltp-items-${horizon}.csv`
 }
 
-export function comboFilename(horizon: Horizon): string {
-  return `ltp-combo-${horizon}.csv`
+/** Download name for a combo. The title is the combo name, cleaned for a file. */
+export function comboFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
+    .replace(/[. ]+$/g, "")
+  return `${cleaned.length > 0 ? cleaned : "combo"}.csv`
 }
 
 export function buildItemsCsv(input: {
@@ -255,10 +285,26 @@ export function buildComboCsv(input: {
     const figures = input.cities.map((city) =>
       cityFigures(input.lang, city, line.item, line.quantity, period, input.overrides[city.id], prices, money),
     )
+    const cadence = cadenceOf(line.item)
+    const quantityText =
+      cadence === "asset" || cadence === "assetArea"
+        ? describeQuantity(
+            input.lang,
+            line.item,
+            line.quantity,
+            input.horizon,
+            input.usage.years[line.item],
+            prices,
+            {
+              rate: input.usage.rates[line.item],
+              repayment: input.usage.repayments[line.item],
+            },
+          )
+        : String(line.quantity)
     rows.push([
       labelItem(input.lang, line.item, prices),
       cadenceLabel(input.lang, line.item, prices),
-      block ? exclusionMessage(input.lang, block, prices) : String(line.quantity),
+      block ? exclusionMessage(input.lang, block, prices) : quantityText,
       ...figures.flatMap((figure) => [figure.usd, figure.hours]),
     ])
   }

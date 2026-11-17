@@ -91,7 +91,6 @@ export function buildShareCard(input: {
   const period: PeriodContext = { horizon: input.horizon, mode, usage: input.usage }
   const view: PriceView = { lang: input.lang, prices: input.cities.flatMap((city) => city.prices) }
   const block = firstUsageBlock(input.lines, period)
-  const note = input.horizon === "listed" ? null : t(input.lang, "amortNote")
   const footer = {
     footerSource: t(input.lang, "footerNumbeoLink"),
     footerSite: t(input.lang, "shareCardSite"),
@@ -110,7 +109,7 @@ export function buildShareCard(input: {
       kicker: t(input.lang, "docTitle"),
       title,
       subtitle,
-      note,
+      note: null,
       lines: detail ? [{ label: t(input.lang, "csvUsage"), detail }] : [],
       more: null,
       cities:
@@ -135,7 +134,7 @@ export function buildShareCard(input: {
     kicker: t(input.lang, "docTitle"),
     title,
     subtitle,
-    note,
+    note: null,
     lines: shown.map((line) => ({
       label: labelItem(input.lang, line.item, view.prices),
       detail: describeQuantity(
@@ -145,6 +144,10 @@ export function buildShareCard(input: {
         input.horizon,
         input.usage.years[line.item],
         view.prices,
+        {
+          rate: input.usage.rates[line.item],
+          repayment: input.usage.repayments[line.item],
+        },
       ),
     })),
     more: hidden > 0 ? formatMessage(t(input.lang, "shareCardMore"), { count: hidden }) : null,

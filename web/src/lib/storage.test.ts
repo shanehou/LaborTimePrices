@@ -60,7 +60,7 @@ describe("writeHourOverride", () => {
     })
     expect(readPeriod()).toEqual({
       horizon: "year",
-      usage: { times: { coffee: 30 }, years: { car: 10 }, area: {} },
+      usage: { times: { coffee: 30 }, years: { car: 10 }, area: {}, rates: {}, repayments: {} },
     })
   })
 
@@ -94,8 +94,38 @@ describe("writeHourOverride", () => {
         times: { "Apples (1 kg)": 2 },
         years: {},
         area: { "Price per Square Meter to Buy Apartment Outside of Centre": 80 },
+        rates: {},
+        repayments: {},
       },
     })
+  })
+
+  it("keeps a positive purchase rate and drops a repayment that is not one of the two modes", () => {
+    const memory = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value)
+      },
+      removeItem: (key: string) => {
+        memory.delete(key)
+      },
+    })
+    memory.set(
+      "ltp.period",
+      JSON.stringify({
+        horizon: "month",
+        usage: {
+          times: {},
+          years: {},
+          area: {},
+          rates: { car: 3.25, rent: 0 },
+          repayments: { car: "principal", rent: "interest-only" },
+        },
+      }),
+    )
+    expect(readPeriod().usage.rates).toEqual({ car: 3.25 })
+    expect(readPeriod().usage.repayments).toEqual({ car: "principal" })
   })
 
   it("stores named combos and ignores a broken library", () => {
@@ -117,10 +147,14 @@ describe("writeHourOverride", () => {
           name: "月费",
           basket: { coffee: { checked: true, quantity: "2" } },
           years: { car: 9 },
+          rates: { car: 2.8 },
+          repayments: { car: "payment" },
         },
       ],
     })
     expect(readComboLibrary().combos[0]?.name).toBe("月费")
+    expect(readComboLibrary().combos[0]?.rates).toEqual({ car: 2.8 })
+    expect(readComboLibrary().combos[0]?.repayments).toEqual({ car: "payment" })
     expect(readComboLibrary().activeId).toBe("a")
     memory.set("ltp.combos", "{")
     expect(readComboLibrary()).toEqual({ combos: [], activeId: null })

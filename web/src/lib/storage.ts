@@ -2,7 +2,7 @@ import { canonicalItemName } from "../data/measure"
 import type { Lang } from "../i18n"
 import { emptyLibrary, normalizeLibrary, type ComboLibrary } from "./combos"
 import { isCurrencyCode, parseFxTable, type CurrencyCode, type FxTable } from "./money"
-import { emptyUsage, type Horizon, type Usage } from "./period"
+import { emptyUsage, repaymentMap, type Horizon, type Usage } from "./period"
 
 const LANG_KEY = "ltp.lang"
 const HOURS_KEY = "ltp.workHours"
@@ -101,7 +101,13 @@ export function readPeriod(): StoredPeriod {
         : "listed"
     const usageRecord =
       typeof record.usage === "object" && record.usage !== null && !Array.isArray(record.usage)
-        ? (record.usage as { times?: unknown; years?: unknown; area?: unknown })
+        ? (record.usage as {
+            times?: unknown
+            years?: unknown
+            area?: unknown
+            rates?: unknown
+            repayments?: unknown
+          })
         : {}
     return {
       horizon,
@@ -109,6 +115,8 @@ export function readPeriod(): StoredPeriod {
         times: positiveMap(usageRecord.times),
         years: positiveMap(usageRecord.years),
         area: positiveMap(usageRecord.area),
+        rates: positiveMap(usageRecord.rates),
+        repayments: repaymentMap(usageRecord.repayments),
       },
     }
   } catch {

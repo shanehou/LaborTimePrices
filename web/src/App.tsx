@@ -356,7 +356,16 @@ export default function App({ startupLang }: { startupLang: Lang }) {
   const custom: CustomBasket = editing?.basket ?? EMPTY_BASKET
   const customName = editing?.name ?? ""
   const comboUsage = useMemo<Usage>(
-    () => (editing ? { times: usage.times, area: usage.area, years: editing.years } : usage),
+    () =>
+      editing
+        ? {
+            times: usage.times,
+            area: usage.area,
+            years: editing.years,
+            rates: editing.rates,
+            repayments: editing.repayments,
+          }
+        : usage,
     [editing, usage],
   )
   const money = useMemo(() => moneyFormat(requestedCurrency, fx), [requestedCurrency, fx])
@@ -468,13 +477,15 @@ export default function App({ startupLang }: { startupLang: Lang }) {
       name: patch.name ?? activeCombo.name,
       basket: patch.basket ?? activeCombo.basket,
       years: patch.years ?? activeCombo.years,
+      rates: patch.rates ?? activeCombo.rates,
+      repayments: patch.repayments ?? activeCombo.repayments,
     })
     setLibrary(next)
     writeComboLibrary(next)
   }
 
   function editFromPreset() {
-    const added = appendCombo(library, presetDraft(usage.years))
+    const added = appendCombo(library, presetDraft(usage))
     if (!added) return
     commitLibrary(added.library, "saved")
   }
@@ -713,7 +724,11 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                         return
                       }
                       setUsage({ ...usage, times: next.times, area: next.area })
-                      updateEditing({ years: next.years })
+                      updateEditing({
+                        years: next.years,
+                        rates: next.rates,
+                        repayments: next.repayments,
+                      })
                     }}
                     onToggle={(item, checked) => {
                       const existing = custom[item]?.quantity
@@ -733,7 +748,13 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                     onSelectPreset={() => commitLibrary({ ...library, activeId: null }, "preset")}
                     onSelectSaved={(id) => commitLibrary({ ...library, activeId: id }, "saved")}
                     onCreate={() => {
-                      const added = appendCombo(library, { name: "", basket: {}, years: {} })
+                      const added = appendCombo(library, {
+                        name: "",
+                        basket: {},
+                        years: {},
+                        rates: {},
+                        repayments: {},
+                      })
                       if (added) commitLibrary(added.library, "saved")
                     }}
                     onDelete={(id) => {
@@ -761,7 +782,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
               onOpenChange={setShareOpen}
               model={shareModel}
               csv={shareCsv}
-              filename={tab === "items" ? itemsFilename(horizon) : comboFilename(horizon)}
+              filename={tab === "items" ? itemsFilename(horizon) : comboFilename(shareModel.title)}
               shareHash={shareHash}
             />
           </>

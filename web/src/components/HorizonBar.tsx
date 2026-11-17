@@ -32,11 +32,6 @@ export function HorizonToggle({
       <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
         {t(lang, "horizonHint")}
       </p>
-      {horizon !== "listed" && (
-        <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
-          {t(lang, "amortNote")}
-        </p>
-      )}
     </div>
   )
 }

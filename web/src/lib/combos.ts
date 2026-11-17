@@ -1,5 +1,6 @@
 import { canonicalItemName } from "../data/measure"
 import { BASKETS } from "../data/items"
+import { repaymentMap, type Repayment } from "./period"
 import { CUSTOM_TARGET, type CustomBasket } from "./rankTarget"
 
 export const COMBO_LIMIT = 20
@@ -10,6 +11,8 @@ export type SavedCombo = {
   name: string
   basket: CustomBasket
   years: Record<string, number>
+  rates: Record<string, number>
+  repayments: Record<string, Repayment>
 }
 
 export type ComboLibrary = {
@@ -21,6 +24,8 @@ export type ComboDraft = {
   name: string
   basket: CustomBasket
   years: Record<string, number>
+  rates: Record<string, number>
+  repayments: Record<string, Repayment>
 }
 
 export type ComboMode = "preset" | "saved" | "draft"
@@ -35,7 +40,11 @@ type ShareCombo = {
   comboTarget: string
   custom: CustomBasket
   customName: string
-  usage: { years: Record<string, number> }
+  usage: {
+    years: Record<string, number>
+    rates?: Record<string, number>
+    repayments?: Record<string, Repayment>
+  }
 }
 
 const QUANTITY_DRAFT = /^\d{0,8}(\.\d{0,4})?$/
@@ -105,7 +114,14 @@ export function normalizeLibrary(input: unknown): ComboLibrary {
   for (const entry of record.combos) {
     if (combos.length >= COMBO_LIMIT) break
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue
-    const row = entry as { id?: unknown; name?: unknown; basket?: unknown; years?: unknown }
+    const row = entry as {
+      id?: unknown
+      name?: unknown
+      basket?: unknown
+      years?: unknown
+      rates?: unknown
+      repayments?: unknown
+    }
     if (typeof row.id !== "string" || row.id.trim() === "" || seen.has(row.id)) continue
     seen.add(row.id)
     combos.push({
@@ -113,6 +129,8 @@ export function normalizeLibrary(input: unknown): ComboLibrary {
       name: typeof row.name === "string" ? clampComboName(row.name) : "",
       basket: normalizeBasket(row.basket),
       years: positiveYears(row.years),
+      rates: positiveYears(row.rates),
+      repayments: repaymentMap(row.repayments),
     })
   }
   const activeId =
@@ -128,19 +146,31 @@ export function createSavedCombo(draft: ComboDraft, id = createComboId()): Saved
     name: clampComboName(draft.name),
     basket: draft.basket,
     years: positiveYears(draft.years),
+    rates: positiveYears(draft.rates),
+    repayments: repaymentMap(draft.repayments),
   }
 }
 
-export function presetDraft(years: Record<string, number>): ComboDraft {
+export function presetDraft(source: {
+  years: Record<string, number>
+  rates?: Record<string, number>
+  repayments?: Record<string, Repayment>
+}): ComboDraft {
   const basket: CustomBasket = Object.fromEntries(
     BASKETS[0].lines.map((line) => [line.item, { checked: true, quantity: String(line.quantity) }]),
   )
-  const kept: Record<string, number> = {}
+  const years: Record<string, number> = {}
+  const rates: Record<string, number> = {}
+  const repayments: Record<string, Repayment> = {}
   for (const item of Object.keys(basket)) {
-    const value = years[item]
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) kept[item] = value
+    const value = source.years[item]
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) years[item] = value
+    const rate = source.rates?.[item]
+    if (typeof rate === "number" && Number.isFinite(rate) && rate > 0) rates[item] = rate
+    const mode = source.repayments?.[item]
+    if (mode === "principal" || mode === "payment") repayments[item] = mode
   }
-  return { name: "", basket, years: kept }
+  return { name: "", basket, years, rates, repayments }
 }
 
 export function appendCombo(
@@ -180,6 +210,8 @@ function draftFromShare(share: ShareCombo): ComboDraft {
     name: clampComboName(share.customName),
     basket: share.custom,
     years: positiveYears(share.usage.years),
+    rates: positiveYears(share.usage.rates),
+    repayments: repaymentMap(share.usage.repayments),
   }
 }
 

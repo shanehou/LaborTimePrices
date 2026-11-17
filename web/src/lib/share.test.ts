@@ -29,6 +29,8 @@ function snapshot(partial: Partial<ShareSnapshot> = {}): ShareSnapshot {
       times: { [ITEMS.coffee]: 30 },
       years: { [car]: 10 },
       area: { [area]: 70 },
+      rates: { [car]: 3.5 },
+      repayments: { [car]: "principal" },
     },
     ...partial,
   }
@@ -80,6 +82,8 @@ describe("share hash", () => {
     expect(encoded).toContain("cur=CNY")
     expect(decodeShare(encoded)?.currency).toBe("CNY")
     expect(decodeShare("s=1")?.currency).toBe("USD")
+    expect(decodeShare("s=1")?.usage.rates).toEqual({})
+    expect(decodeShare("s=1")?.usage.repayments).toEqual({})
     expect(encoded.match(/b=/g)).toHaveLength(1)
   })
 })

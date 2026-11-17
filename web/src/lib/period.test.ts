@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest"
 import { ITEM_CADENCE, cadenceOf } from "../data/cadence"
 import { ITEMS, NUMBEO_ITEMS } from "../data/items"
 import { evaluateBasket } from "./labor"
-import { emptyUsage, fillEmptyUsage, lineSpendUsd, setUsageNumber, type PeriodContext } from "./period"
+import {
+  emptyUsage,
+  fillEmptyUsage,
+  lineSpendUsd,
+  setUsageNumber,
+  setUsageRepayment,
+  type PeriodContext,
+} from "./period"
 import type { CityRecord } from "./types"
 
 const car = "Volkswagen Golf 1.5 (or Equivalent New Compact Car)"
@@ -87,6 +94,48 @@ describe("lineSpendUsd", () => {
 
     const combo: PeriodContext = { horizon: "year", mode: "combo", usage: ready }
     expect(lineSpendUsd(15000, area, 70, combo)).toEqual({ ok: true, usd: 52500 })
+  })
+
+  it("keeps a straight line when the rate is empty and prices a loan when it is set", () => {
+    const straight = setUsageRepayment(
+      setUsageNumber(emptyUsage(), "years", car, 10),
+      car,
+      "principal",
+    )
+    const straightPeriod: PeriodContext = { horizon: "month", mode: "single", usage: straight }
+    expect(lineSpendUsd(30000, car, 1, straightPeriod)).toEqual({ ok: true, usd: 250 })
+
+    const principal = setUsageNumber(straight, "rates", car, 6)
+    const principalMonth: PeriodContext = { horizon: "month", mode: "single", usage: principal }
+    expect(lineSpendUsd(120000, car, 1, principalMonth)).toEqual({
+      ok: true,
+      usd: expect.closeTo(1302.5, 5),
+    })
+    const principalYear: PeriodContext = { horizon: "year", mode: "combo", usage: principal }
+    expect(lineSpendUsd(120000, car, 2, principalYear)).toEqual({
+      ok: true,
+      usd: expect.closeTo(31260, 4),
+    })
+
+    const installment = setUsageRepayment(principal, car, "payment")
+    const installmentMonth: PeriodContext = { horizon: "month", mode: "single", usage: installment }
+    const growth = 1.005 ** 120
+    const monthly = (120000 * 0.005 * growth) / (growth - 1)
+    expect(lineSpendUsd(120000, car, 1, installmentMonth)).toEqual({
+      ok: true,
+      usd: expect.closeTo(monthly, 6),
+    })
+
+    const fractional = setUsageNumber(installment, "years", car, 10.4)
+    const fractionalPeriod: PeriodContext = { horizon: "month", mode: "single", usage: fractional }
+    const months = 125
+    const rate = 0.06 / 12
+    const grown = (1 + rate) ** months
+    const expected = (12000 * rate * grown) / (grown - 1)
+    expect(lineSpendUsd(12000, car, 1, fractionalPeriod)).toEqual({
+      ok: true,
+      usd: expect.closeTo(expected, 6),
+    })
   })
 
   it("fills empty counts and years without overwriting", () => {

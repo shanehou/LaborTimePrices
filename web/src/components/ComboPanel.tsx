@@ -27,6 +27,7 @@ import {
   lineSpendUsd,
   quantityFromField,
   setUsageNumber,
+  setUsageRepayment,
   usageBlock,
   type Horizon,
   type PeriodContext,
@@ -155,7 +156,16 @@ export function ComboPanel({
                   name={isSelected ? customName : combo.name}
                   editing={isSelected}
                   horizon={horizon}
-                  usage={isSelected ? usage : { ...usage, years: combo.years }}
+                  usage={
+                    isSelected
+                      ? usage
+                      : {
+                          ...usage,
+                          years: combo.years,
+                          rates: combo.rates,
+                          repayments: combo.repayments,
+                        }
+                  }
                   prices={view.prices}
                   onName={onCustomName}
                 />
@@ -227,6 +237,8 @@ export function ComboPanel({
           onToggle={onToggle}
           onQuantity={onQuantity}
           onYears={(item, years) => onUsage(setUsageNumber(usage, "years", item, years))}
+          onRate={(item, rate) => onUsage(setUsageNumber(usage, "rates", item, rate))}
+          onRepayment={(item, repayment) => onUsage(setUsageRepayment(usage, item, repayment))}
         />
       )}
 
@@ -269,7 +281,18 @@ export function ComboPanel({
                         />
                       </TableCell>
                       <TableCell className="nums whitespace-normal">
-                        {describeQuantity(lang, row.item, row.quantity, horizon, usage.years[row.item], view.prices)}
+                        {describeQuantity(
+                          lang,
+                          row.item,
+                          row.quantity,
+                          horizon,
+                          usage.years[row.item],
+                          view.prices,
+                          {
+                            rate: usage.rates[row.item],
+                            repayment: usage.repayments[row.item],
+                          },
+                        )}
                       </TableCell>
                       {cities.map((city) => {
                         const price = findPrice(city, row.item)
@@ -373,6 +396,7 @@ function ComboSummary({
                 horizon,
                 usage.years[item],
                 prices,
+                { rate: usage.rates[item], repayment: usage.repayments[item] },
               )}
             </li>
           ))}

@@ -1,7 +1,7 @@
 import { ITEMS, NUMBEO_ITEMS } from "../data/items"
 import type { Lang } from "../i18n"
 import { isCurrencyCode, type CurrencyCode } from "./money"
-import { emptyUsage, type Horizon, type Usage } from "./period"
+import { emptyUsage, isRepayment, type Horizon, type Repayment, type Usage } from "./period"
 import { CUSTOM_TARGET, PRESET_TARGET, type CustomBasket } from "./rankTarget"
 
 export type ShareCity = { id: string; name: string }
@@ -55,6 +55,32 @@ function readPairs(value: string | null): { index: number; value: number }[] {
   return pairs
 }
 
+function repaymentPairs(map: Record<string, Repayment>): string {
+  return Object.entries(map)
+    .flatMap(([item, mode]) => {
+      const index = itemIndex(item)
+      if (index < 0 || !isRepayment(mode)) return []
+      return [`${index}:${mode === "principal" ? "q" : "p"}`]
+    })
+    .sort((left, right) => Number(left.split(":")[0]) - Number(right.split(":")[0]))
+    .join("|")
+}
+
+function readRepayments(value: string | null): { index: number; mode: Repayment }[] {
+  if (!value) return []
+  const pairs: { index: number; mode: Repayment }[] = []
+  for (const part of value.split("|")) {
+    const splitAt = part.indexOf(":")
+    if (splitAt <= 0) continue
+    const index = Number(part.slice(0, splitAt))
+    const code = part.slice(splitAt + 1)
+    const mode = code === "q" ? "principal" : code === "p" ? "payment" : null
+    if (!Number.isInteger(index) || index < 0 || index >= NUMBEO_ITEMS.length || !mode) continue
+    pairs.push({ index, mode })
+  }
+  return pairs
+}
+
 export function encodeShare(snapshot: ShareSnapshot): string {
   const params = new URLSearchParams()
   params.set("s", "1")
@@ -91,9 +117,13 @@ export function encodeShare(snapshot: ShareSnapshot): string {
   const times = pairsFromMap(snapshot.usage.times)
   const years = pairsFromMap(snapshot.usage.years)
   const area = pairsFromMap(snapshot.usage.area)
+  const rates = pairsFromMap(snapshot.usage.rates)
+  const repayments = repaymentPairs(snapshot.usage.repayments)
   if (times) params.set("r", times)
   if (years) params.set("y", years)
   if (area) params.set("a", area)
+  if (rates) params.set("ir", rates)
+  if (repayments) params.set("im", repayments)
   if (snapshot.currency !== "USD") params.set("cur", snapshot.currency)
   return params.toString()
 }
@@ -158,6 +188,14 @@ export function decodeShare(hash: string): ShareSnapshot | null {
   for (const pair of readPairs(params.get("a"))) {
     const name = NUMBEO_ITEMS[pair.index]
     if (name) usage.area[name] = pair.value
+  }
+  for (const pair of readPairs(params.get("ir"))) {
+    const name = NUMBEO_ITEMS[pair.index]
+    if (name) usage.rates[name] = pair.value
+  }
+  for (const pair of readRepayments(params.get("im"))) {
+    const name = NUMBEO_ITEMS[pair.index]
+    if (name) usage.repayments[name] = pair.mode
   }
 
   return {

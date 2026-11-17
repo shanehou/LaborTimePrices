@@ -23,7 +23,11 @@ function shareCustom(name = "两人的月") {
     custom: {
       [ITEMS.coffee]: { checked: true, quantity: "30" },
     },
-    usage: { years: { [car]: 8 } },
+    usage: {
+      years: { [car]: 8 },
+      rates: { [car]: 4.2 },
+      repayments: { [car]: "principal" as const },
+    },
   }
 }
 
@@ -33,6 +37,8 @@ function saved(id: string, years: number): SavedCombo {
     name: id,
     basket: { [car]: { checked: true, quantity: "1" } },
     years: { [car]: years },
+    rates: {},
+    repayments: {},
   }
 }
 
@@ -46,6 +52,8 @@ describe("normalizeLibrary", () => {
         "Apples (1 lb)": { checked: true, quantity: "4" },
       },
       years: { [car]: index === 1 ? 0 : 6 },
+      rates: { [car]: index === 1 ? 0 : 4.5 },
+      repayments: { [car]: index === 1 ? "interest-only" : "principal" },
     }))
     const library = normalizeLibrary({
       activeId: "id-3",
@@ -56,7 +64,11 @@ describe("normalizeLibrary", () => {
     expect(library.combos[0]?.basket[ITEMS.coffee]).toBeUndefined()
     expect(library.combos[0]?.basket["Apples (1 kg)"]).toEqual({ checked: true, quantity: "4" })
     expect(library.combos[1]?.years).toEqual({})
+    expect(library.combos[1]?.rates).toEqual({})
+    expect(library.combos[1]?.repayments).toEqual({})
     expect(library.combos[0]?.years).toEqual({ [car]: 6 })
+    expect(library.combos[0]?.rates).toEqual({ [car]: 4.5 })
+    expect(library.combos[0]?.repayments).toEqual({ [car]: "principal" })
     expect(library.activeId).toBe("id-3")
     expect(normalizeLibrary({ activeId: "missing", combos: [] }).activeId).toBeNull()
   })
@@ -68,12 +80,16 @@ describe("combo edits", () => {
       name: "five",
       basket: saved("a", 5).basket,
       years: { [car]: 5 },
+      rates: { [car]: 3 },
+      repayments: { [car]: "payment" },
     })
     expect(first).not.toBeNull()
     const second = appendCombo(first!.library, {
       name: "ten",
       basket: saved("b", 10).basket,
       years: { [car]: 10 },
+      rates: {},
+      repayments: {},
     })
     const updated = replaceCombo(second!.library, {
       ...second!.combo,
@@ -88,18 +104,32 @@ describe("combo edits", () => {
   it("refuses a twenty-first combo", () => {
     let library: ComboLibrary = emptyLibrary()
     for (let index = 0; index < COMBO_LIMIT; index += 1) {
-      const added = appendCombo(library, { name: String(index), basket: {}, years: {} })
+      const added = appendCombo(library, {
+        name: String(index),
+        basket: {},
+        years: {},
+        rates: {},
+        repayments: {},
+      })
       expect(added).not.toBeNull()
       library = added!.library
     }
-    expect(appendCombo(library, { name: "overflow", basket: {}, years: {} })).toBeNull()
+    expect(
+      appendCombo(library, { name: "overflow", basket: {}, years: {}, rates: {}, repayments: {} }),
+    ).toBeNull()
   })
 
   it("copies the preset lines into a new draft", () => {
-    const draft = presetDraft({ [car]: 4, [ITEMS.rentOutside]: 3 })
+    const draft = presetDraft({
+      years: { [car]: 4, [ITEMS.rentOutside]: 3 },
+      rates: { [car]: 9, [ITEMS.rentOutside]: 2.5 },
+      repayments: { [ITEMS.rentOutside]: "principal" },
+    })
     expect(draft.basket[ITEMS.rentOutside]).toEqual({ checked: true, quantity: "1" })
     expect(draft.basket[ITEMS.utilities]).toEqual({ checked: true, quantity: "1" })
     expect(draft.years).toEqual({ [ITEMS.rentOutside]: 3 })
+    expect(draft.rates).toEqual({ [ITEMS.rentOutside]: 2.5 })
+    expect(draft.repayments).toEqual({ [ITEMS.rentOutside]: "principal" })
   })
 })
 
@@ -133,6 +163,8 @@ describe("resolveComboSession", () => {
     expect(resolved.session.library.combos).toHaveLength(1)
     expect(resolved.session.library.combos[0]?.name).toBe("从链接来")
     expect(resolved.session.library.combos[0]?.years[car]).toBe(8)
+    expect(resolved.session.library.combos[0]?.rates[car]).toBe(4.2)
+    expect(resolved.session.library.combos[0]?.repayments[car]).toBe("principal")
     expect(resolved.persistHash).toBe("s=1&bt=custom")
   })
 
