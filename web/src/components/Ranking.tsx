@@ -17,7 +17,7 @@ import {
   type Lang,
 } from "@/i18n"
 import { formatLaborHours, formatPlain, formatUsd } from "@/lib/format"
-import { rankCities } from "@/lib/labor"
+import { rankCities, type PriceView } from "@/lib/labor"
 import { firstUsageBlock, type PeriodContext } from "@/lib/period"
 import type { BasketLine, CityRecord } from "@/lib/types"
 
@@ -47,11 +47,12 @@ export function Ranking({
 }: RankingProps) {
   const pickerItems = items ?? []
   const showPicker = target !== undefined && onTarget !== undefined
+  const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   const block = firstUsageBlock(lines, period)
   const result =
     block || customEmpty || lines.length === 0
       ? null
-      : rankCities(cities, lines, overrides, period)
+      : rankCities(cities, lines, overrides, period, view)
 
   return (
     <section className="flex flex-col gap-4">
@@ -76,7 +77,7 @@ export function Ranking({
                 <SelectLabel>{t(lang, "rankGroupItems")}</SelectLabel>
                 {pickerItems.map((item) => (
                   <SelectItem key={item} value={`item:${item}`}>
-                    {labelItem(lang, item)}
+                    {labelItem(lang, item, view.prices)}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -85,7 +86,7 @@ export function Ranking({
         </div>
       )}
       {block ? (
-        <p className="text-sm text-muted-foreground">{exclusionMessage(lang, block)}</p>
+        <p className="text-sm text-muted-foreground">{exclusionMessage(lang, block, view.prices)}</p>
       ) : cities.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t(lang, "rankEmptySelection")}</p>
       ) : customEmpty ? (
@@ -129,7 +130,7 @@ export function Ranking({
           <ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
             {result.excluded.map((row) => (
               <li key={row.city.id}>
-                {row.city.name}: {exclusionMessage(lang, row.reason)}
+                {row.city.name}: {exclusionMessage(lang, row.reason, view.prices)}
               </li>
             ))}
           </ul>

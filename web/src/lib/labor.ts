@@ -1,3 +1,5 @@
+import { canonicalItemName, priceUsdFor, type PriceSample } from "../data/measure"
+import type { Lang } from "../i18n"
 import { firstUsageBlock, lineSpendUsd, type PeriodContext } from "./period"
 import type {
   BasketLine,
@@ -5,6 +7,11 @@ import type {
   Exclusion,
   HoursSource,
 } from "./types"
+
+export type PriceView = {
+  lang: Lang
+  prices: readonly PriceSample[]
+}
 
 /** Weekly full-time hours × 52 / 12. */
 export const DEFAULT_MONTHLY_HOURS = 173.3
@@ -77,7 +84,14 @@ function salaryExclusion(salary: number | null): Exclusion | null {
 }
 
 export function findPrice(city: CityRecord, item: string) {
-  return city.prices.find((price) => price.item === item)
+  const key = canonicalItemName(item)
+  const matches = city.prices.filter((price) => canonicalItemName(price.item) === key)
+  return matches.find((price) => price.item === key) ?? matches[0]
+}
+
+function rowUsd(row: { item: string; price_usd: number }, view?: PriceView): number {
+  if (!view) return row.price_usd
+  return priceUsdFor(view.lang, row, view.prices)
 }
 
 /**
@@ -99,6 +113,7 @@ export function evaluateBasket(
   lines: BasketLine[],
   visitorHours?: number,
   period?: PeriodContext,
+  view?: PriceView,
 ): LaborSuccess | LaborFailure {
   const blocked = firstUsageBlock(lines, period)
   if (blocked) return { ok: false, reason: blocked }
@@ -125,13 +140,14 @@ export function evaluateBasket(
     if (!price) {
       return { ok: false, reason: { code: "missing_item", item: line.item } }
     }
-    if (!isPositiveFinite(price.price_usd)) {
+    const usd = rowUsd(price, view)
+    if (!isPositiveFinite(usd)) {
       return {
         ok: false,
         reason: { code: "non_positive_price", item: line.item },
       }
     }
-    const spent = lineSpendUsd(price.price_usd, line.item, line.quantity, period)
+    const spent = lineSpendUsd(usd, line.item, line.quantity, period)
     if (!spent.ok) return { ok: false, reason: spent.reason }
     totalUsd += spent.usd
   }
@@ -152,12 +168,13 @@ export function rankCities(
   lines: BasketLine[],
   visitorHoursByCity: Record<string, number | undefined>,
   period?: PeriodContext,
+  view?: PriceView,
 ): { ranked: RankedCity[]; excluded: ExcludedCity[] } {
   const ranked: RankedCity[] = []
   const excluded: ExcludedCity[] = []
 
   for (const city of cities) {
-    const result = evaluateBasket(city, lines, visitorHoursByCity[city.id], period)
+    const result = evaluateBasket(city, lines, visitorHoursByCity[city.id], period, view)
     if (result.ok) {
       ranked.push({
         city,
@@ -183,9 +200,10 @@ export function listCatalog(cities: CityRecord[]): { category: string; item: str
   const catalog: { category: string; item: string }[] = []
   for (const city of cities) {
     for (const price of city.prices) {
-      if (seen.has(price.item)) continue
-      seen.add(price.item)
-      catalog.push({ category: price.category, item: price.item })
+      const item = canonicalItemName(price.item)
+      if (seen.has(item)) continue
+      seen.add(item)
+      catalog.push({ category: price.category, item })
     }
   }
   return catalog

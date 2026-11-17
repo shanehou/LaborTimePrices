@@ -2,12 +2,12 @@
  * Exact Numbeo item names. The Worker parses Numbeo's HTML with these strings,
  * so they must not be translated here.
  *
- * NUMBEO_ITEMS is the full set of item names the current cost-of-living page
- * reports, in the order Numbeo lists them. It is the source of truth for the
- * Chinese labels in i18n/zh.ts: TypeScript requires every name here to have a
- * translation and rejects misspelled keys. When Numbeo changes an item name,
- * update this list, the labels, and the Worker fixtures/parse tests together.
- * Items this list does not know about fall back to their English name.
+ * NUMBEO_ITEMS is the metric English wording of the current cost-of-living
+ * page, in the order Numbeo lists the rows. It is the source of truth for the
+ * Chinese labels in i18n/zh.ts. When a city payload contains both the metric
+ * and imperial names, the metric row is kept. When it contains only one,
+ * English shows that original name and price, and Chinese uses the metric
+ * label (scaling mass, distance and area prices). See data/measure.ts.
  *
  * Order is the share-link item index. Append new names; do not reorder or
  * insert, or previously copied links will point at the wrong items.

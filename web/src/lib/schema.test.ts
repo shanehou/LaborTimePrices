@@ -46,6 +46,27 @@ describe("validateCityRecord", () => {
     }
   })
 
+  it("keeps a single measurement and prefers the metric row when both are present", () => {
+    const validated = validateCityRecord({
+      ...validCity,
+      prices: [
+        { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+        {
+          category: "Utilities (Monthly)",
+          item: "Basic Utilities for 915 Square Feet Apartment (Electricity, Heating, Cooling, Water, Garbage)",
+          price_usd: 10,
+        },
+        { category: "Utilities (Monthly)", item: ITEMS.utilities, price_usd: 59.47 },
+      ],
+    })
+    expect(validated.ok).toBe(true)
+    if (!validated.ok) return
+    expect(validated.city.prices).toEqual([
+      { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+      { category: "Utilities (Monthly)", item: ITEMS.utilities, price_usd: 59.47 },
+    ])
+  })
+
   it("keeps non-positive prices for the ranking to exclude", () => {
     const validated = validateCityRecord({
       ...validCity,

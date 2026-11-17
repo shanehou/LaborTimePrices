@@ -19,7 +19,8 @@ import { exclusionMessage, labelItem, t, type Lang } from "@/i18n"
 import { comboDetail } from "@/lib/combo"
 import { describeQuantity } from "@/lib/exportCsv"
 import { formatLaborHours, formatUsd } from "@/lib/format"
-import { findPrice, evaluateBasket } from "@/lib/labor"
+import { priceUsdFor } from "@/data/measure"
+import { findPrice, evaluateBasket, type PriceView } from "@/lib/labor"
 import {
   lineSpendUsd,
   quantityFromField,
@@ -75,7 +76,8 @@ export function ComboPanel({
 }: ComboPanelProps) {
   const isCustom = target === CUSTOM_TARGET
   const period: PeriodContext = { horizon, mode: "combo", usage }
-  const rows = comboDetail(lines, cities)
+  const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
+  const rows = comboDetail(lines, cities, view)
   const checked = Object.entries(custom).filter(([, state]) => state.checked)
 
   return (
@@ -94,7 +96,7 @@ export function ComboPanel({
             <ul className="flex flex-col gap-1">
               {BASKETS[0].lines.map((line) => (
                 <li key={line.item} className="text-sm text-muted-foreground">
-                  {labelItem(lang, line.item)} × {line.quantity}
+                    {labelItem(lang, line.item, view.prices)} × {line.quantity}
                 </li>
               ))}
             </ul>
@@ -126,13 +128,14 @@ export function ComboPanel({
               <ul className="flex flex-col gap-1">
                 {checked.map(([item, state]) => (
                   <li key={item} className="text-sm text-muted-foreground">
-                    {labelItem(lang, item)} ·{" "}
+                    {labelItem(lang, item, view.prices)} ·{" "}
                     {describeQuantity(
                       lang,
                       item,
                       quantityFromField(state.quantity),
                       horizon,
                       usage.years[item],
+                      view.prices,
                     )}
                   </li>
                 ))}
@@ -148,6 +151,7 @@ export function ComboPanel({
         <BasketEditor
           lang={lang}
           groups={groups}
+          prices={view.prices}
           hasCities={cities.length > 0}
           custom={custom}
           horizon={horizon}
@@ -193,17 +197,19 @@ export function ComboPanel({
                           mode="combo"
                           usage={usage}
                           quantity={row.quantity}
+                          prices={view.prices}
                         />
                       </TableCell>
                       <TableCell className="nums whitespace-normal">
-                        {describeQuantity(lang, row.item, row.quantity, horizon, usage.years[row.item])}
+                        {describeQuantity(lang, row.item, row.quantity, horizon, usage.years[row.item], view.prices)}
                       </TableCell>
                       {cities.map((city) => {
                         const price = findPrice(city, row.item)
+                        const usd = price ? priceUsdFor(lang, price, view.prices) : 0
                         const spent =
                           blocked || !price
                             ? null
-                            : lineSpendUsd(price.price_usd, row.item, row.quantity, period)
+                            : lineSpendUsd(usd, row.item, row.quantity, period)
                         return (
                           <TableCell key={city.id} className="text-right nums">
                             {spent && spent.ok ? formatUsd(lang, spent.usd) : "—"}
@@ -217,7 +223,7 @@ export function ComboPanel({
                   <TableCell className="font-medium">{t(lang, "comboTotal")}</TableCell>
                   <TableCell />
                   {cities.map((city) => {
-                    const result = evaluateBasket(city, lines, overrides[city.id], period)
+                    const result = evaluateBasket(city, lines, overrides[city.id], period, view)
                     return (
                       <TableCell key={city.id} className="text-right nums">
                         {result.ok ? (
@@ -231,7 +237,7 @@ export function ComboPanel({
                           </>
                         ) : (
                           <span className="text-xs text-muted-foreground">
-                            {exclusionMessage(lang, result.reason)}
+                            {exclusionMessage(lang, result.reason, view.prices)}
                           </span>
                         )}
                       </TableCell>

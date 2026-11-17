@@ -1,12 +1,13 @@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { cadenceOf } from "@/data/cadence"
+import { showsImperialArea, type PriceSample } from "@/data/measure"
 import { formatMessage, labelCategory, labelItem, t, type Lang } from "@/i18n"
 import type { MessageKey } from "@/i18n/en"
 import { DEFAULT_PURCHASE_YEARS, type Horizon, type Usage } from "@/lib/period"
 import type { CustomBasket } from "@/lib/rankTarget"
 
-function quantityKey(item: string, horizon: Horizon): MessageKey {
+function quantityKey(item: string, horizon: Horizon, imperialArea: boolean): MessageKey {
   if (horizon === "listed") return "basketQty"
   switch (cadenceOf(item)) {
     case "unit":
@@ -14,13 +15,13 @@ function quantityKey(item: string, horizon: Horizon): MessageKey {
     case "asset":
       return "basketQtyCount"
     case "assetArea":
-      return "basketQtyArea"
+      return imperialArea ? "basketQtyAreaImperial" : "basketQtyArea"
     default:
       return "basketQtyBills"
   }
 }
 
-function quantityCaption(item: string, horizon: Horizon): MessageKey {
+function quantityCaption(item: string, horizon: Horizon, imperialArea: boolean): MessageKey {
   if (horizon === "listed") return "comboQty"
   switch (cadenceOf(item)) {
     case "unit":
@@ -28,7 +29,7 @@ function quantityCaption(item: string, horizon: Horizon): MessageKey {
     case "asset":
       return "fieldPieces"
     case "assetArea":
-      return "usageArea"
+      return imperialArea ? "usageAreaImperial" : "usageArea"
     default:
       return "fieldBills"
   }
@@ -37,6 +38,7 @@ function quantityCaption(item: string, horizon: Horizon): MessageKey {
 type BasketEditorProps = {
   lang: Lang
   groups: { category: string; items: string[] }[]
+  prices?: readonly PriceSample[]
   hasCities: boolean
   custom: CustomBasket
   horizon: Horizon
@@ -49,6 +51,7 @@ type BasketEditorProps = {
 export function BasketEditor({
   lang,
   groups,
+  prices,
   hasCities,
   custom,
   horizon,
@@ -81,9 +84,10 @@ export function BasketEditor({
                   const state = custom[item] ?? { checked: false, quantity: "1" }
                   const inputId = `qty-${item}`
                   const cadence = cadenceOf(item)
+                  const imperialArea = showsImperialArea(lang, item, prices)
                   const showYears =
                     horizon !== "listed" && (cadence === "asset" || cadence === "assetArea")
-                  const named = labelItem(lang, item)
+                  const named = labelItem(lang, item, prices)
                   return (
                     <li
                       key={item}
@@ -99,7 +103,7 @@ export function BasketEditor({
                       </label>
                       {state.checked && (
                         <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
-                          {t(lang, quantityCaption(item, horizon))}
+                          {t(lang, quantityCaption(item, horizon, imperialArea))}
                           <Input
                             id={inputId}
                             className="w-24"
@@ -108,7 +112,7 @@ export function BasketEditor({
                             step={1}
                             inputMode="decimal"
                             value={state.quantity}
-                            aria-label={formatMessage(t(lang, quantityKey(item, horizon)), {
+                            aria-label={formatMessage(t(lang, quantityKey(item, horizon, imperialArea)), {
                               item: named,
                             })}
                             onChange={(event) => onQuantity(item, event.target.value)}

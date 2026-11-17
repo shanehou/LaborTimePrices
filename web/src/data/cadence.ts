@@ -1,3 +1,4 @@
+import { canonicalItemName } from "./measure"
 import type { NumbeoItem } from "./items"
 
 /**
@@ -78,8 +79,9 @@ export const ITEM_CADENCE = {
 } satisfies Record<NumbeoItem, Cadence>
 
 export function cadenceOf(item: string): Cadence {
-  if (Object.prototype.hasOwnProperty.call(ITEM_CADENCE, item)) {
-    return ITEM_CADENCE[item as NumbeoItem]
+  const key = canonicalItemName(item)
+  if (Object.prototype.hasOwnProperty.call(ITEM_CADENCE, key)) {
+    return ITEM_CADENCE[key as NumbeoItem]
   }
   return "unit"
 }

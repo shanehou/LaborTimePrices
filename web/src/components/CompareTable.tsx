@@ -28,6 +28,7 @@ import {
   groupCatalog,
   listCatalog,
   resolveMonthlyHours,
+  type PriceView,
 } from "@/lib/labor"
 import { emptyUsage, usageBlock, type PeriodContext } from "@/lib/period"
 
@@ -288,6 +289,7 @@ function CategoryRows({
   baselineCity: CityRecord | undefined
   showValues: boolean
 }) {
+  const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   return (
     <>
       <TableRow className="bg-muted/70 hover:bg-muted/70">
@@ -299,7 +301,7 @@ function CategoryRows({
         const blocked = usageBlock(item, 1, period)
         const baselineValue = blocked
           ? null
-          : baselineValueFor(baselineCity, item, unit, overrides, period)
+          : baselineValueFor(baselineCity, item, unit, overrides, period, view)
         return (
           <TableRow key={item}>
             <TableCell
@@ -311,6 +313,7 @@ function CategoryRows({
                 horizon="listed"
                 mode="single"
                 usage={period.usage}
+                prices={view.prices}
               />
             </TableCell>
             {cities.map((city, index) => {
@@ -340,6 +343,7 @@ function CategoryRows({
                       baselineName={baselineCity?.name}
                       isBaseline={isBaseline}
                       showValues={showValues}
+                      view={view}
                     />
                   )}
                 </TableCell>
@@ -359,9 +363,10 @@ function baselineValueFor(
   unit: PriceUnit,
   overrides: Record<string, number>,
   period: PeriodContext,
+  view: PriceView,
 ): number | null {
   if (!city) return null
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], overrides[city.id], period)
+  const result = evaluateBasket(city, [{ item, quantity: 1 }], overrides[city.id], period, view)
   if (!result.ok) return null
   return unit === "usd" ? result.totalUsd : result.hours
 }
@@ -379,6 +384,7 @@ function cellModel({
   override,
   baselineValue,
   isBaseline,
+  view,
 }: {
   lang: Lang
   city: CityRecord
@@ -388,9 +394,10 @@ function cellModel({
   override: number | undefined
   baselineValue: number | null
   isBaseline: boolean
+  view: PriceView
 }): CellModel {
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], override, period)
-  if (!result.ok) return { kind: "reason", text: exclusionMessage(lang, result.reason) }
+  const result = evaluateBasket(city, [{ item, quantity: 1 }], override, period, view)
+  if (!result.ok) return { kind: "reason", text: exclusionMessage(lang, result.reason, view.prices) }
   const value = unit === "usd" ? result.totalUsd : result.hours
   const delta = !isBaseline && baselineValue !== null ? percentDelta(value, baselineValue) : null
   const text = unit === "usd" ? formatUsd(lang, result.totalUsd) : formatLaborHours(lang, result.hours)
@@ -408,6 +415,7 @@ function CellValue({
   baselineName,
   isBaseline,
   showValues,
+  view,
 }: {
   lang: Lang
   city: CityRecord
@@ -419,8 +427,9 @@ function CellValue({
   baselineName: string | undefined
   isBaseline: boolean
   showValues: boolean
+  view: PriceView
 }) {
-  const model = cellModel({ lang, city, item, unit, period, override, baselineValue, isBaseline })
+  const model = cellModel({ lang, city, item, unit, period, override, baselineValue, isBaseline, view })
   if (model.kind === "reason") return <Reason>{model.text}</Reason>
   const showAbsolute = isBaseline || showValues || model.delta === null
   return (
@@ -455,6 +464,7 @@ function CompareCards({
   period: PeriodContext
   baselineCity: CityRecord | undefined
 }) {
+  const view: PriceView = { lang, prices: cities.flatMap((city) => city.prices) }
   return (
     <div className="flex flex-col gap-5" data-compare-cards>
       {baselineCity && (
@@ -472,7 +482,7 @@ function CompareCards({
               const blocked = usageBlock(item, 1, period)
               const baselineValue = blocked
                 ? null
-                : baselineValueFor(baselineCity, item, unit, overrides, period)
+                : baselineValueFor(baselineCity, item, unit, overrides, period, view)
               return (
                 <li key={item} className="rounded-xl bg-card p-3 ring-1 ring-foreground/10">
                   <ItemUsage
@@ -481,6 +491,7 @@ function CompareCards({
                     horizon="listed"
                     mode="single"
                     usage={period.usage}
+                    prices={view.prices}
                   />
                   <ul className="mt-2 flex flex-col gap-1.5">
                     {cities.map((city) => {
@@ -496,6 +507,7 @@ function CompareCards({
                             override: overrides[city.id],
                             baselineValue,
                             isBaseline,
+                            view,
                           })
                       return (
                         <li

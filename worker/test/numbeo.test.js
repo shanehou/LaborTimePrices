@@ -4,6 +4,7 @@ import test from "node:test"
 import { ApiError } from "../errors.js"
 import {
   COLLECTOR_UA,
+  canonicalizePrices,
   decodeEntities,
   isValidCityId,
   normalizeText,
@@ -318,6 +319,31 @@ test("searchCities maps a single-segment label to both name and country", async 
   )
   assert.deepEqual(await searchCities("nowhere"), [
     { id: "7", label: "Nowhere", name: "Nowhere", country: "Nowhere" },
+  ])
+})
+
+test("canonicalizePrices keeps a single unit and prefers metric when both are present", () => {
+  const utilities =
+    "Basic Utilities for 915 Square Feet Apartment (Electricity, Heating, Cooling, Water, Garbage)"
+  const metricUtilities =
+    "Basic Utilities for 85 m2 Apartment (Electricity, Heating, Cooling, Water, Garbage)"
+  const imperialOnly = canonicalizePrices([
+    { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+    { category: "Utilities (Monthly)", item: utilities, price_usd: 59.47 },
+    { category: "Markets", item: "Milk (Regular, 1 Liter)", price_usd: 1.81 },
+  ])
+  assert.deepEqual(imperialOnly, [
+    { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+    { category: "Utilities (Monthly)", item: utilities, price_usd: 59.47 },
+    { category: "Markets", item: "Milk (Regular, 1 Liter)", price_usd: 1.81 },
+  ])
+
+  const both = canonicalizePrices([
+    { category: "Utilities (Monthly)", item: utilities, price_usd: 1 },
+    { category: "Utilities (Monthly)", item: metricUtilities, price_usd: 59.47 },
+  ])
+  assert.deepEqual(both, [
+    { category: "Utilities (Monthly)", item: metricUtilities, price_usd: 59.47 },
   ])
 })
 

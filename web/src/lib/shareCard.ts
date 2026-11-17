@@ -7,7 +7,7 @@ import {
 } from "../i18n"
 import { describeQuantity, usageText } from "./exportCsv"
 import { formatLaborHours, formatUsd } from "./format"
-import { evaluateBasket } from "./labor"
+import { evaluateBasket, type PriceView } from "./labor"
 import { firstUsageBlock, type Horizon, type PeriodContext, type Usage } from "./period"
 import { CUSTOM_TARGET } from "./rankTarget"
 import type { BasketLine, CityRecord } from "./types"
@@ -53,10 +53,16 @@ function cityRow(
   lines: BasketLine[],
   override: number | undefined,
   period: PeriodContext,
+  view: PriceView,
 ): ShareCardCity {
-  const result = evaluateBasket(city, lines, override, period)
+  const result = evaluateBasket(city, lines, override, period, view)
   if (!result.ok) {
-    return { name: city.name, primary: null, secondary: null, reason: exclusionMessage(lang, result.reason) }
+    return {
+      name: city.name,
+      primary: null,
+      secondary: null,
+      reason: exclusionMessage(lang, result.reason, view.prices),
+    }
   }
   return {
     name: city.name,
@@ -79,6 +85,7 @@ export function buildShareCard(input: {
 }): ShareCardModel {
   const mode = input.tab === "items" ? "single" : "combo"
   const period: PeriodContext = { horizon: input.horizon, mode, usage: input.usage }
+  const view: PriceView = { lang: input.lang, prices: input.cities.flatMap((city) => city.prices) }
   const block = firstUsageBlock(input.lines, period)
   const note = input.horizon === "listed" ? null : t(input.lang, "amortNote")
   const footer = {
@@ -90,9 +97,11 @@ export function buildShareCard(input: {
 
   if (input.tab === "items") {
     const item = input.lines[0]?.item
-    const title = item ? labelItem(input.lang, item) : t(input.lang, "tabItems")
+    const title = item ? labelItem(input.lang, item, view.prices) : t(input.lang, "tabItems")
     const detail =
-      item && !block ? usageText(input.lang, item, input.lines[0]?.quantity ?? 1, period) : ""
+      item && !block
+        ? usageText(input.lang, item, input.lines[0]?.quantity ?? 1, period, view.prices)
+        : ""
     return {
       kicker: t(input.lang, "docTitle"),
       title,
@@ -104,7 +113,7 @@ export function buildShareCard(input: {
         block || input.cities.length === 0
           ? []
           : input.cities.map((city) =>
-              cityRow(input.lang, city, input.lines, input.overrides[city.id], period),
+              cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view),
             ),
       blocked: block ? exclusionMessage(input.lang, block) : null,
       empty: input.cities.length === 0 ? t(input.lang, "shareCardEmpty") : null,
@@ -124,13 +133,14 @@ export function buildShareCard(input: {
     subtitle,
     note,
     lines: shown.map((line) => ({
-      label: labelItem(input.lang, line.item),
+      label: labelItem(input.lang, line.item, view.prices),
       detail: describeQuantity(
         input.lang,
         line.item,
         line.quantity,
         input.horizon,
         input.usage.years[line.item],
+        view.prices,
       ),
     })),
     more: hidden > 0 ? formatMessage(t(input.lang, "shareCardMore"), { count: hidden }) : null,
@@ -138,7 +148,7 @@ export function buildShareCard(input: {
       block || input.cities.length === 0 || input.lines.length === 0
         ? []
         : input.cities.map((city) =>
-            cityRow(input.lang, city, input.lines, input.overrides[city.id], period),
+            cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view),
           ),
     blocked: block
       ? exclusionMessage(input.lang, block)

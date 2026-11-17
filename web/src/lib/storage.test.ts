@@ -63,4 +63,38 @@ describe("writeHourOverride", () => {
       usage: { times: { coffee: 30 }, years: { car: 10 }, area: {} },
     })
   })
+
+  it("folds a saved US item name onto the metric catalog", () => {
+    const memory = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value)
+      },
+      removeItem: (key: string) => {
+        memory.delete(key)
+      },
+    })
+    memory.set(
+      "ltp.period",
+      JSON.stringify({
+        horizon: "month",
+        usage: {
+          times: { "Apples (1 lb)": 4, "Apples (1 kg)": 2 },
+          years: {},
+          area: {
+            "Price per Square Feet to Buy Apartment Outside of Centre": 80,
+          },
+        },
+      }),
+    )
+    expect(readPeriod()).toEqual({
+      horizon: "month",
+      usage: {
+        times: { "Apples (1 kg)": 2 },
+        years: {},
+        area: { "Price per Square Meter to Buy Apartment Outside of Centre": 80 },
+      },
+    })
+  })
 })

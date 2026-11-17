@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { cadenceOf } from "@/data/cadence"
+import { showsImperialArea, type PriceSample } from "@/data/measure"
 import { exclusionMessage, formatMessage, labelItem, t, type Lang } from "@/i18n"
 import { cadenceLabel } from "@/lib/exportCsv"
 import {
@@ -64,6 +65,7 @@ export function ItemUsage({
   mode,
   usage,
   quantity = 1,
+  prices,
   onTimes,
   onYears,
   onArea,
@@ -74,6 +76,7 @@ export function ItemUsage({
   mode: PeriodMode
   usage: Usage
   quantity?: number
+  prices?: readonly PriceSample[]
   onTimes?: (item: string, value: number | undefined) => void
   onYears?: (item: string, value: number | undefined) => void
   onArea?: (item: string, value: number | undefined) => void
@@ -82,7 +85,8 @@ export function ItemUsage({
   const period: PeriodContext = { horizon, mode, usage }
   const block = usageBlock(item, quantity, period)
   const factor = horizonFactor(cadence, horizon)
-  const named = labelItem(lang, item)
+  const named = labelItem(lang, item, prices)
+  const imperialArea = showsImperialArea(lang, item, prices)
   const showTimes = horizon !== "listed" && cadence === "unit" && mode === "single" && onTimes
   const showArea = horizon !== "listed" && cadence === "assetArea" && mode === "single" && onArea
   const showYears =
@@ -93,7 +97,7 @@ export function ItemUsage({
       <span className="leading-snug">{named}</span>
       <div className="flex flex-wrap items-center gap-1">
         <Badge variant="outline" className="text-[10px]">
-          {cadenceLabel(lang, item)}
+          {cadenceLabel(lang, item, prices)}
         </Badge>
         {factor === "x12" && (
           <span className="text-[10px] text-muted-foreground">{t(lang, "factorTimes12")}</span>
@@ -114,10 +118,10 @@ export function ItemUsage({
       )}
       {showArea && (
         <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-          {t(lang, "usageArea")}
+          {t(lang, imperialArea ? "usageAreaImperial" : "usageArea")}
           <UsageNumber
             value={usage.area[item]}
-            label={formatMessage(t(lang, "basketQtyArea"), { item: named })}
+            label={formatMessage(t(lang, imperialArea ? "basketQtyAreaImperial" : "basketQtyArea"), { item: named })}
             onValue={(value) => onArea?.(item, value)}
           />
         </label>
@@ -132,7 +136,7 @@ export function ItemUsage({
           />
         </label>
       )}
-      {block && <p className="text-xs text-muted-foreground">{exclusionMessage(lang, block)}</p>}
+      {block && <p className="text-xs text-muted-foreground">{exclusionMessage(lang, block, prices)}</p>}
     </div>
   )
 }

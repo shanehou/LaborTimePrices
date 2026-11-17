@@ -1,3 +1,6 @@
+import { priceUsdFor, type PriceSample } from "../data/measure"
+import type { Lang } from "../i18n"
+import { findPrice } from "./labor"
 import type { BasketLine, CityRecord } from "./types"
 
 export type ComboDetailRow = {
@@ -12,14 +15,20 @@ export type ComboDetailRow = {
  * listed price multiplied by that line's quantity. A missing item stays null so
  * the UI can show a dash instead of a misleading zero.
  */
-export function comboDetail(lines: BasketLine[], cities: CityRecord[]): ComboDetailRow[] {
+export function comboDetail(
+  lines: BasketLine[],
+  cities: CityRecord[],
+  view?: { lang: Lang; prices: readonly PriceSample[] },
+): ComboDetailRow[] {
   return lines.map((line) => ({
     item: line.item,
     quantity: line.quantity,
     byCity: Object.fromEntries(
       cities.map((city) => {
-        const price = city.prices.find((entry) => entry.item === line.item)
-        return [city.id, price ? price.price_usd * line.quantity : null]
+        const price = findPrice(city, line.item)
+        if (!price) return [city.id, null]
+        const usd = view ? priceUsdFor(view.lang, price, view.prices) : price.price_usd
+        return [city.id, usd * line.quantity]
       }),
     ),
   }))

@@ -24,6 +24,7 @@ import {
 } from "./cache.js"
 import { ApiError, errorResponse, jsonResponse } from "./errors.js"
 import {
+  canonicalizePrices,
   isValidCityId,
   scrapeCity,
   searchCities,
@@ -135,7 +136,10 @@ function readStoredCity(stored) {
   const scrapedAt =
     typeof stored.scraped_at === "string" ? stored.scraped_at : stored.city.scraped_at
   if (typeof scrapedAt !== "string") return null
-  return { city: stored.city, scraped_at: scrapedAt }
+  return {
+    city: { ...stored.city, prices: canonicalizePrices(stored.city.prices) },
+    scraped_at: scrapedAt,
+  }
 }
 
 function cityEnvelope(record) {

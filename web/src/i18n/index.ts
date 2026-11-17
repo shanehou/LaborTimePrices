@@ -1,3 +1,4 @@
+import { canonicalItemName, englishItemName, type PriceSample } from "../data/measure"
 import { en, type MessageKey } from "./en"
 import { zh, zhCategoryLabels, zhCountryLabels, zhItemLabels } from "./zh"
 import type { ApiErrorCode } from "../lib/api"
@@ -23,8 +24,10 @@ export function formatMessage(
   })
 }
 
-export function labelItem(lang: Lang, item: string): string {
-  if (lang === "zh") return zhItemLabels[item] ?? item
+export function labelItem(lang: Lang, item: string, prices?: readonly PriceSample[]): string {
+  const key = canonicalItemName(item)
+  if (lang === "zh") return zhItemLabels[key] ?? item
+  if (prices) return englishItemName(key, prices)
   return item
 }
 
@@ -38,8 +41,12 @@ export function labelCountry(lang: Lang, country: string): string {
   return country
 }
 
-export function exclusionMessage(lang: Lang, reason: Exclusion): string {
-  const item = reason.item ? labelItem(lang, reason.item) : ""
+export function exclusionMessage(
+  lang: Lang,
+  reason: Exclusion,
+  prices?: readonly PriceSample[],
+): string {
+  const item = reason.item ? labelItem(lang, reason.item, prices) : ""
   switch (reason.code) {
     case "missing_salary":
       return t(lang, "reasonMissingSalary")

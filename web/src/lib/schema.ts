@@ -1,3 +1,4 @@
+import { canonicalizePrices } from "../data/measure"
 import type { CatalogCity, CityRecord } from "./types"
 
 export type SchemaFailure = "invalid_schema"
@@ -84,7 +85,7 @@ export function validateCityRecord(input: unknown): CityValidationResult {
     name,
     country,
     monthly_net_salary: monthlyNetSalary,
-    prices,
+    prices: canonicalizePrices(prices),
   }
   if (monthlyWorkHours !== undefined) city.monthly_work_hours = monthlyWorkHours
   if (scrapedAt.value !== undefined) city.scraped_at = scrapedAt.value

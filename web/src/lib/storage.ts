@@ -1,3 +1,4 @@
+import { canonicalItemName } from "../data/measure"
 import type { Lang } from "../i18n"
 import { emptyUsage, type Horizon, type Usage } from "./period"
 
@@ -72,7 +73,10 @@ function positiveMap(value: unknown): Record<string, number> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
   const next: Record<string, number> = {}
   for (const [item, amount] of Object.entries(value)) {
-    if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) next[item] = amount
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) continue
+    const name = canonicalItemName(item)
+    if (name !== item && next[name] !== undefined) continue
+    next[name] = amount
   }
   return next
 }

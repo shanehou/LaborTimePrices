@@ -169,7 +169,7 @@ curl -s https://ltp.melkor.me/api/city/3781 | head -c 400
 ## 城市目录与条目名
 
 - 加/删城市：直接改 `worker/catalog.js`（`{ id, name, country }`，`id` 是 Numbeo 的 city id）。目录只影响选择器，不影响抓取逻辑。
-- 内置组合/条目名在 `web/src/data/items.ts`，必须和 Numbeo 页面上的英文原文完全一致；同一文件里的 `NUMBEO_ITEMS` 是当前页面全部条目的清单，中文名在 `web/src/i18n/zh.ts` 的 `zhItemLabels`，TypeScript 会确保两者一一对应，没收录的新条目自动回退显示英文原文。Worker 解析器在 `worker/numbeo.js`。Numbeo 改版时，条目清单、中文翻译、`worker/test/fixtures/` 和解析测试要一起更新。
+- 内置组合/条目名在 `web/src/data/items.ts`，公制英文原文和 `web/src/i18n/zh.ts` 的中文名一一对应。Numbeo 有时只给公制，有时只给美制，偶尔同一条两种都有。两种都有时保留公制。只有一种时，英文显示原始单位和原始标价，中文显示公制名称，并把磅、英里、平方英尺的标价换算过去。别名在 `web/src/data/measure.ts`，Worker 只负责在同一份数据里两种都有时丢掉美制那条。Numbeo 改版时，条目清单、中文翻译、美制别名和解析测试要一起更新。
 - 目录外城市：在城市选择器里搜不到时就查 Numbeo 搜索接口，选中后同样走 `/api/city/:id`；冷抓取仍受上面的限流约束。
 
 ## 公式

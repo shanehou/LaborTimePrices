@@ -26,6 +26,76 @@ const COLLECTOR_HEADERS = {
   "accept-language": ACCEPT_LANGUAGE,
 }
 
+// Same fold as web/src/data/measure.ts. Volume labels keep their price;
+// mass, distance and area prices are scaled to the metric row.
+const POUND_KG = 0.45359237
+const MILE_KM = 1.609344
+const SQFT_PER_SQM = 1 / (0.3048 * 0.3048)
+const PER_KG = 1 / POUND_KG
+const LOAF_500G = 0.5 / POUND_KG
+const PER_KM = 1 / MILE_KM
+
+const US_MEASURE_ALIASES = {
+  "Domestic Draft Beer (1 Pint)": ["Domestic Draft Beer (0.5 Liter)", 1],
+  "Imported Beer (12 oz Small Bottle)": ["Imported Beer (0.33 Liter Bottle)", 1],
+  "Soft Drink (Coca-Cola or Pepsi, 12 oz Small Bottle)": [
+    "Soft Drink (Coca-Cola or Pepsi, 0.33 Liter Bottle)",
+    1,
+  ],
+  "Bottled Water (12 oz)": ["Bottled Water (0.33 Liter)", 1],
+  "Fresh White Bread (1 lb Loaf)": ["Fresh White Bread (500 g Loaf)", LOAF_500G],
+  "White Rice (1 lb)": ["White Rice (1 kg)", PER_KG],
+  "Local Cheese (1 lb)": ["Local Cheese (1 kg)", PER_KG],
+  "Chicken Fillets (1 lb)": ["Chicken Fillets (1 kg)", PER_KG],
+  "Beef Round or Equivalent Back Leg Red Meat (1 lb)": [
+    "Beef Round or Equivalent Back Leg Red Meat (1 kg)",
+    PER_KG,
+  ],
+  "Apples (1 lb)": ["Apples (1 kg)", PER_KG],
+  "Bananas (1 lb)": ["Bananas (1 kg)", PER_KG],
+  "Oranges (1 lb)": ["Oranges (1 kg)", PER_KG],
+  "Tomatoes (1 lb)": ["Tomatoes (1 kg)", PER_KG],
+  "Potatoes (1 lb)": ["Potatoes (1 kg)", PER_KG],
+  "Onions (1 lb)": ["Onions (1 kg)", PER_KG],
+  "Bottled Water (50 oz)": ["Bottled Water (1.5 Liter)", 1],
+  "Domestic Beer (16.9 oz Bottle)": ["Domestic Beer (0.5 Liter Bottle)", 1],
+  "Taxi 1 mile (Standard Tariff)": ["Taxi 1 km (Standard Tariff)", PER_KM],
+  "Basic Utilities for 915 Square Feet Apartment (Electricity, Heating, Cooling, Water, Garbage)": [
+    "Basic Utilities for 85 m2 Apartment (Electricity, Heating, Cooling, Water, Garbage)",
+    1,
+  ],
+  "Price per Square Feet to Buy Apartment in City Centre": [
+    "Price per Square Meter to Buy Apartment in City Centre",
+    SQFT_PER_SQM,
+  ],
+  "Price per Square Feet to Buy Apartment Outside of Centre": [
+    "Price per Square Meter to Buy Apartment Outside of Centre",
+    SQFT_PER_SQM,
+  ],
+}
+
+// Keeps the metric row when a category lists both names. An imperial-only row
+// stays unchanged so English can show Numbeo's original unit.
+export function canonicalizePrices(prices) {
+  const metricKeys = new Set()
+  for (const price of prices) {
+    if (!US_MEASURE_ALIASES[price.item]) {
+      metricKeys.add(`${price.category}\0${price.item}`)
+    }
+  }
+  const result = []
+  const seen = new Set()
+  for (const price of prices) {
+    const alias = US_MEASURE_ALIASES[price.item]
+    const key = `${price.category}\0${alias ? alias[0] : price.item}`
+    if (alias && metricKeys.has(key)) continue
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(price)
+  }
+  return result
+}
+
 const NAMED_ENTITIES = {
   amp: "&",
   apos: "'",
@@ -197,7 +267,7 @@ export function parseCityHtml(html, { id, source_url, scraped_at } = {}) {
     name: identity.name,
     country: identity.country,
     monthly_net_salary: monthlySalary,
-    prices,
+    prices: canonicalizePrices(prices),
     scraped_at: scraped_at ?? new Date().toISOString(),
     source_url: source_url ?? "",
   }
