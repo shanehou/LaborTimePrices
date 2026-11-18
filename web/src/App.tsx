@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CitySelect } from "@/components/CitySelect"
 import { ComboPanel, CUSTOM_TARGET, PRESET_TARGET } from "@/components/ComboPanel"
+import { CitySettingsEditor } from "@/components/CitySettingsEditor"
+import type { UsageOverridePatch } from "@/components/CityUsageDialog"
 import { CompareTable, type PriceUnit } from "@/components/CompareTable"
-import { HoursEditor } from "@/components/HoursEditor"
 import { Ranking } from "@/components/Ranking"
 import { ShareDialog } from "@/components/ShareDialog"
 import { Button } from "@/components/ui/button"
@@ -33,7 +34,7 @@ import {
 import { buildComboCsv, buildItemsCsv, comboFilename, itemsFilename } from "@/lib/exportCsv"
 import { formatDate } from "@/lib/format"
 import { groupCatalog, listCatalog } from "@/lib/labor"
-import { emptyUsage, type Horizon, type PeriodContext, type Usage } from "@/lib/period"
+import { emptyUsage, mergeUsageOverrides, setUsageOverrideNumber, setUsageOverrideRepayment, type Horizon, type PeriodContext, type Usage, type UsageOverrides } from "@/lib/period"
 import { fxRate, isCurrencyCode, moneyFormat, CURRENCIES, type CurrencyCode, type FxTable } from "@/lib/money"
 import { linesForTarget, type CustomBasket } from "@/lib/rankTarget"
 import { moveItem } from "@/lib/reorder"
@@ -46,6 +47,8 @@ import {
   readHourOverrides,
   readLastHash,
   readPeriod,
+  readSalaryOverrides,
+  readUsageOverrides,
   writeComboLibrary,
   writeCurrency,
   writeFx,
@@ -53,6 +56,8 @@ import {
   writeLang,
   writeLastHash,
   writePeriod,
+  writeSalaryOverride,
+  writeUsageOverrides,
 } from "@/lib/storage"
 import type { CatalogCity, CityRecord, CityLoadStatus } from "@/lib/types"
 
@@ -154,6 +159,22 @@ export default function App({ startupLang }: { startupLang: Lang }) {
       next = writeHourOverride(cityId, hours)
     }
     return next
+  })
+  const [salaryOverrides, setSalaryOverrides] = useState(() => {
+    const base = readSalaryOverrides()
+    if (!openedShare) return base
+    let next = base
+    for (const [cityId, salary] of Object.entries(openedShare.salaries)) {
+      next = writeSalaryOverride(cityId, salary)
+    }
+    return next
+  })
+  const [usageOverrides, setUsageOverrides] = useState<UsageOverrides>(() => {
+    const base = readUsageOverrides()
+    if (!openedShare) return base
+    const merged = mergeUsageOverrides(base, openedShare.usageOverrides)
+    writeUsageOverrides(merged)
+    return merged
   })
   const [unit, setUnit] = useState<PriceUnit>(openedShare?.unit ?? "hours")
   const [tab, setTab] = useState<"items" | "combos">(openedShare?.tab ?? "items")
@@ -380,6 +401,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
       encodeShare({
         cities: visibleCities.map((city) => ({ id: city.id, name: city.name })),
         hours: overrides,
+        salaries: salaryOverrides,
         lang,
         tab,
         unit,
@@ -389,11 +411,14 @@ export default function App({ startupLang }: { startupLang: Lang }) {
         custom,
         customName,
         usage: comboUsage,
+        usageOverrides,
         currency: money.currency,
       }),
     [
       visibleCities,
       overrides,
+      salaryOverrides,
+      usageOverrides,
       lang,
       tab,
       unit,
@@ -426,13 +451,15 @@ export default function App({ startupLang }: { startupLang: Lang }) {
         horizon: shareHorizon,
         cities: readyCities,
         overrides,
+        salaryOverrides,
+        usageOverrides,
         comboTarget,
         customName,
         lines: activeLines,
         usage: comboUsage,
         money,
       }),
-    [lang, tab, shareHorizon, readyCities, overrides, comboTarget, customName, activeLines, comboUsage, money],
+    [lang, tab, shareHorizon, readyCities, overrides, salaryOverrides, usageOverrides, comboTarget, customName, activeLines, comboUsage, money],
   )
 
   const shareCsv = useMemo(
@@ -443,6 +470,8 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             cities: readyCities,
             items,
             overrides,
+            salaryOverrides,
+            usageOverrides,
             horizon: "listed",
             usage: emptyUsage(),
             money,
@@ -452,11 +481,13 @@ export default function App({ startupLang }: { startupLang: Lang }) {
             cities: readyCities,
             lines: comboLines,
             overrides,
+            salaryOverrides,
+            usageOverrides,
             horizon,
             usage: comboUsage,
             money,
           }),
-    [tab, lang, readyCities, items, comboLines, overrides, horizon, comboUsage, money],
+    [tab, lang, readyCities, items, comboLines, overrides, salaryOverrides, usageOverrides, horizon, comboUsage, money],
   )
 
   function commitLibrary(next: ComboLibrary, mode: ComboMode) {
@@ -506,6 +537,30 @@ export default function App({ startupLang }: { startupLang: Lang }) {
     if (next !== "zh" && next !== "en") return
     writeLang(next)
     setLang(next)
+  }
+
+  function changeSalary(cityId: string, salaryUsd: number | null) {
+    setSalaryOverrides(writeSalaryOverride(cityId, salaryUsd))
+  }
+
+  function changeUsageOverride(item: string, cityId: string, patch: UsageOverridePatch) {
+    setUsageOverrides((current) => {
+      let next = current
+      if (patch.area !== undefined) {
+        next = setUsageOverrideNumber(next, "area", item, cityId, patch.area ?? undefined)
+      }
+      if (patch.years !== undefined) {
+        next = setUsageOverrideNumber(next, "years", item, cityId, patch.years ?? undefined)
+      }
+      if (patch.rate !== undefined) {
+        next = setUsageOverrideNumber(next, "rates", item, cityId, patch.rate ?? undefined)
+      }
+      if (patch.repayment !== undefined) {
+        next = setUsageOverrideRepayment(next, item, cityId, patch.repayment ?? undefined)
+      }
+      if (next !== current) writeUsageOverrides(next)
+      return next
+    })
   }
 
   return (
@@ -636,13 +691,16 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                     )}
                   </div>
                 ) : null}
-                <HoursEditor
+                <CitySettingsEditor
                   lang={lang}
                   cities={readyCities}
-                  overrides={overrides}
-                  onChange={(cityId, hours) =>
+                  hoursOverrides={overrides}
+                  salaryOverrides={salaryOverrides}
+                  onHoursChange={(cityId, hours) =>
                     setOverrides(writeHourOverride(cityId, hours))
                   }
+                  onSalaryChange={changeSalary}
+                  money={money}
                 />
               </CardContent>
             </Card>
@@ -685,6 +743,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                       lang={lang}
                       cities={readyCities}
                       overrides={overrides}
+                      salaryOverrides={salaryOverrides}
                       unit={unit}
                       onUnit={setUnit}
                       money={money}
@@ -697,6 +756,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                       lines={itemLines}
                       customEmpty={false}
                       overrides={overrides}
+                      salaryOverrides={salaryOverrides}
                       period={itemPeriod}
                       items={items}
                       money={money}
@@ -707,6 +767,8 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                     lang={lang}
                     cities={readyCities}
                     overrides={overrides}
+                    salaryOverrides={salaryOverrides}
+                    usageOverrides={usageOverrides}
                     mode={comboMode}
                     activeId={library.activeId}
                     combos={library.combos}
@@ -718,6 +780,7 @@ export default function App({ startupLang }: { startupLang: Lang }) {
                     horizon={horizon}
                     onHorizon={setHorizon}
                     usage={comboUsage}
+                    onUsageOverride={changeUsageOverride}
                     onUsage={(next) => {
                       if (!editing) {
                         setUsage(next)

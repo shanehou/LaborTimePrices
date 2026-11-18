@@ -6,6 +6,7 @@ import {
   laborHoursForPrice,
   rankCities,
   resolveMonthlyHours,
+  resolveMonthlyNetSalary,
 } from "./labor"
 import type { CityRecord } from "./types"
 
@@ -130,6 +131,59 @@ describe("labor hours", () => {
     if (!doubled.ok) return
     expect(doubled.totalUsd).toBe(2100)
     expect(doubled.hours).toBeCloseTo(2100 / wage)
+  })
+
+  it("uses the Numbeo salary unless this visitor stored one", () => {
+    expect(resolveMonthlyNetSalary({ monthly_net_salary: 2400 }, undefined)).toEqual({
+      ok: true,
+      salary: 2400,
+      source: "numbeo",
+    })
+    expect(resolveMonthlyNetSalary({ monthly_net_salary: 2400 }, 3000)).toEqual({
+      ok: true,
+      salary: 3000,
+      source: "visitor",
+    })
+    expect(resolveMonthlyNetSalary({ monthly_net_salary: null }, 3000)).toEqual({
+      ok: true,
+      salary: 3000,
+      source: "visitor",
+    })
+    expect(resolveMonthlyNetSalary({ monthly_net_salary: null }, undefined)).toEqual({
+      ok: false,
+      reason: { code: "missing_salary" },
+    })
+    expect(resolveMonthlyNetSalary({ monthly_net_salary: 2400 }, 0)).toEqual({
+      ok: false,
+      reason: { code: "non_positive_salary" },
+    })
+  })
+
+  it("prices with the visitor salary for that city only", () => {
+    const sample = city({ id: "demo", monthly_work_hours: 100, monthly_net_salary: 2000 })
+    const baseline = evaluateBasket(sample, [{ item: ITEMS.coffee, quantity: 1 }])
+    expect(baseline.ok).toBe(true)
+    if (baseline.ok) expect(baseline.hours).toBeCloseTo(5 / 20)
+
+    const raised = evaluateBasket(sample, [{ item: ITEMS.coffee, quantity: 1 }], undefined, undefined, undefined, 4000)
+    expect(raised.ok).toBe(true)
+    if (raised.ok) {
+      expect(raised.hourlyWage).toBe(40)
+      expect(raised.hours).toBeCloseTo(5 / 40)
+    }
+
+    const { ranked } = rankCities(
+      [sample, city({ id: "other", monthly_work_hours: 100, monthly_net_salary: 2000 })],
+      [{ item: ITEMS.coffee, quantity: 1 }],
+      {},
+      undefined,
+      undefined,
+      { demo: 8000 },
+    )
+    const demo = ranked.find((row) => row.city.id === "demo")
+    const other = ranked.find((row) => row.city.id === "other")
+    expect(demo?.hourlyWage).toBe(80)
+    expect(other?.hourlyWage).toBe(20)
   })
 
   it("drops a city with a missing salary or a non-positive price from the ranking", () => {

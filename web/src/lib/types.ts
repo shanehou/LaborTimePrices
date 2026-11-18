@@ -12,6 +12,8 @@ export type CatalogCity = {
 
 export type CityRecord = CatalogCity & {
   monthly_net_salary: number | null
+  /** Annual mortgage interest in percent, parsed from Numbeo's "(in %)" row. */
+  mortgage_rate?: number | null
   monthly_work_hours?: number
   prices: CityPrice[]
   scraped_at?: string

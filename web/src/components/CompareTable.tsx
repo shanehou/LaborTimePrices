@@ -29,6 +29,7 @@ import {
   groupCatalog,
   listCatalog,
   resolveMonthlyHours,
+  resolveMonthlyNetSalary,
   type PriceView,
 } from "@/lib/labor"
 import { emptyUsage, usageBlock, type PeriodContext } from "@/lib/period"
@@ -42,6 +43,7 @@ type CompareTableProps = {
   lang: Lang
   cities: CityRecord[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
   unit: PriceUnit
   onUnit: (unit: PriceUnit) => void
   money?: MoneyFormat
@@ -57,6 +59,7 @@ export function CompareTable({
   lang,
   cities,
   overrides,
+  salaryOverrides,
   unit,
   onUnit,
   money = USD_MONEY,
@@ -180,11 +183,9 @@ export function CompareTable({
                     </TableHead>
                     {cities.map((city, index) => {
                       const resolved = resolveMonthlyHours(city, overrides[city.id])
-                      const salary = city.monthly_net_salary
+                      const salary = resolveMonthlyNetSalary(city, salaryOverrides?.[city.id])
                       const wage =
-                        resolved.ok && salary !== null && salary > 0
-                          ? salary / resolved.hours
-                          : null
+                        resolved.ok && salary.ok ? salary.salary / resolved.hours : null
                       const isFirst = index === 0
                       const isBaseline = isFirst && baselineCity !== undefined
                       const widthClass = isFirst
@@ -219,6 +220,9 @@ export function CompareTable({
                             {resolved.ok && resolved.source === "visitor" && (
                               <Badge className="text-[10px]">{t(lang, "hoursVisitor")}</Badge>
                             )}
+                            {salary.ok && salary.source === "visitor" && (
+                              <Badge className="text-[10px]">{t(lang, "salaryVisitor")}</Badge>
+                            )}
                           </div>
                           {(index === 0 || showValues) && (
                             <div
@@ -247,6 +251,7 @@ export function CompareTable({
                       items={group.items}
                       cities={cities}
                       overrides={overrides}
+                      salaryOverrides={salaryOverrides}
                       unit={unit}
                       period={LISTED_PERIOD}
                       baselineCity={baselineCity}
@@ -263,6 +268,7 @@ export function CompareTable({
               groups={groups}
               cities={cities}
               overrides={overrides}
+              salaryOverrides={salaryOverrides}
               unit={unit}
               period={LISTED_PERIOD}
               baselineCity={baselineCity}
@@ -281,6 +287,7 @@ function CategoryRows({
   items,
   cities,
   overrides,
+  salaryOverrides,
   unit,
   period,
   baselineCity,
@@ -292,6 +299,7 @@ function CategoryRows({
   items: string[]
   cities: CityRecord[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
   unit: PriceUnit
   period: PeriodContext
   baselineCity: CityRecord | undefined
@@ -310,7 +318,7 @@ function CategoryRows({
         const blocked = usageBlock(item, 1, period)
         const baselineValue = blocked
           ? null
-          : baselineValueFor(baselineCity, item, unit, overrides, period, view)
+          : baselineValueFor(baselineCity, item, unit, overrides, salaryOverrides, period, view)
         return (
           <TableRow key={item}>
             <TableCell
@@ -348,6 +356,7 @@ function CategoryRows({
                       unit={unit}
                       period={period}
                       override={overrides[city.id]}
+                      salaryOverride={salaryOverrides?.[city.id]}
                       baselineValue={baselineValue}
                       baselineName={baselineCity?.name}
                       isBaseline={isBaseline}
@@ -372,11 +381,19 @@ function baselineValueFor(
   item: string,
   unit: PriceUnit,
   overrides: Record<string, number>,
+  salaryOverrides: Record<string, number> | undefined,
   period: PeriodContext,
   view: PriceView,
 ): number | null {
   if (!city) return null
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], overrides[city.id], period, view)
+  const result = evaluateBasket(
+    city,
+    [{ item, quantity: 1 }],
+    overrides[city.id],
+    period,
+    view,
+    salaryOverrides?.[city.id],
+  )
   if (!result.ok) return null
   return unit === "usd" ? result.totalUsd : result.hours
 }
@@ -392,6 +409,7 @@ function cellModel({
   unit,
   period,
   override,
+  salaryOverride,
   baselineValue,
   isBaseline,
   view,
@@ -403,12 +421,20 @@ function cellModel({
   unit: PriceUnit
   period: PeriodContext
   override: number | undefined
+  salaryOverride: number | undefined
   baselineValue: number | null
   isBaseline: boolean
   view: PriceView
   money: MoneyFormat
 }): CellModel {
-  const result = evaluateBasket(city, [{ item, quantity: 1 }], override, period, view)
+  const result = evaluateBasket(
+    city,
+    [{ item, quantity: 1 }],
+    override,
+    period,
+    view,
+    salaryOverride,
+  )
   if (!result.ok) return { kind: "reason", text: exclusionMessage(lang, result.reason, view.prices) }
   const value = unit === "usd" ? result.totalUsd : result.hours
   const delta = !isBaseline && baselineValue !== null ? percentDelta(value, baselineValue) : null
@@ -423,6 +449,7 @@ function CellValue({
   unit,
   period,
   override,
+  salaryOverride,
   baselineValue,
   baselineName,
   isBaseline,
@@ -436,6 +463,7 @@ function CellValue({
   unit: PriceUnit
   period: PeriodContext
   override: number | undefined
+  salaryOverride: number | undefined
   baselineValue: number | null
   baselineName: string | undefined
   isBaseline: boolean
@@ -450,6 +478,7 @@ function CellValue({
     unit,
     period,
     override,
+    salaryOverride,
     baselineValue,
     isBaseline,
     view,
@@ -477,6 +506,7 @@ function CompareCards({
   groups,
   cities,
   overrides,
+  salaryOverrides,
   unit,
   period,
   baselineCity,
@@ -486,6 +516,7 @@ function CompareCards({
   groups: { category: string; items: string[] }[]
   cities: CityRecord[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
   unit: PriceUnit
   period: PeriodContext
   baselineCity: CityRecord | undefined
@@ -509,7 +540,7 @@ function CompareCards({
               const blocked = usageBlock(item, 1, period)
               const baselineValue = blocked
                 ? null
-                : baselineValueFor(baselineCity, item, unit, overrides, period, view)
+                : baselineValueFor(baselineCity, item, unit, overrides, salaryOverrides, period, view)
               return (
                 <li key={item} className="rounded-xl bg-card p-3 ring-1 ring-foreground/10">
                   <ItemUsage
@@ -532,6 +563,7 @@ function CompareCards({
                             unit,
                             period,
                             override: overrides[city.id],
+                            salaryOverride: salaryOverrides?.[city.id],
                             baselineValue,
                             isBaseline,
                             view,

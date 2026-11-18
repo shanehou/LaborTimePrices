@@ -1,6 +1,6 @@
 import { canonicalItemName, priceUsdFor, type PriceSample } from "../data/measure"
 import type { Lang } from "../i18n"
-import { firstUsageBlock, lineSpendUsd, type PeriodContext } from "./period"
+import { cityPeriod, firstUsageBlock, lineSpendUsd, type PeriodContext, type UsageOverrides } from "./period"
 import type {
   BasketLine,
   CityRecord,
@@ -18,6 +18,12 @@ export const DEFAULT_MONTHLY_HOURS = 173.3
 
 export type HoursResolution =
   | { ok: true; hours: number; source: HoursSource }
+  | { ok: false; reason: Exclusion }
+
+export type SalarySource = "visitor" | "numbeo"
+
+export type SalaryResolution =
+  | { ok: true; salary: number; source: SalarySource }
   | { ok: false; reason: Exclusion }
 
 export type LaborSuccess = {
@@ -83,6 +89,22 @@ function salaryExclusion(salary: number | null): Exclusion | null {
   return null
 }
 
+/** Visitor salary (USD) wins over the city's Numbeo value. */
+export function resolveMonthlyNetSalary(
+  city: { monthly_net_salary: number | null },
+  visitorSalary: number | undefined,
+): SalaryResolution {
+  if (visitorSalary !== undefined) {
+    if (!isPositiveFinite(visitorSalary)) {
+      return { ok: false, reason: { code: "non_positive_salary" } }
+    }
+    return { ok: true, salary: visitorSalary, source: "visitor" }
+  }
+  const problem = salaryExclusion(city.monthly_net_salary)
+  if (problem) return { ok: false, reason: problem }
+  return { ok: true, salary: city.monthly_net_salary!, source: "numbeo" }
+}
+
 export function findPrice(city: CityRecord, item: string) {
   const key = canonicalItemName(item)
   const matches = city.prices.filter((price) => canonicalItemName(price.item) === key)
@@ -114,19 +136,23 @@ export function evaluateBasket(
   visitorHours?: number,
   period?: PeriodContext,
   view?: PriceView,
+  visitorSalary?: number,
+  usageOverrides?: UsageOverrides,
 ): LaborSuccess | LaborFailure {
   const blocked = firstUsageBlock(lines, period)
   if (blocked) return { ok: false, reason: blocked }
 
-  const salaryProblem = salaryExclusion(city.monthly_net_salary)
-  if (salaryProblem) {
-    return { ok: false, reason: salaryProblem }
+  const resolvedSalary = resolveMonthlyNetSalary(city, visitorSalary)
+  if (!resolvedSalary.ok) {
+    return { ok: false, reason: resolvedSalary.reason }
   }
 
   const resolved = resolveMonthlyHours(city, visitorHours)
   if (!resolved.ok) {
     return resolved
   }
+
+  const cityScoped = period ? cityPeriod(period, city, usageOverrides) : undefined
 
   let totalUsd = 0
   for (const line of lines) {
@@ -147,12 +173,12 @@ export function evaluateBasket(
         reason: { code: "non_positive_price", item: line.item },
       }
     }
-    const spent = lineSpendUsd(usd, line.item, line.quantity, period)
+    const spent = lineSpendUsd(usd, line.item, line.quantity, cityScoped ?? period)
     if (!spent.ok) return { ok: false, reason: spent.reason }
     totalUsd += spent.usd
   }
 
-  const hourlyWage = city.monthly_net_salary! / resolved.hours
+  const hourlyWage = resolvedSalary.salary / resolved.hours
   return {
     ok: true,
     hours: totalUsd / hourlyWage,
@@ -169,12 +195,22 @@ export function rankCities(
   visitorHoursByCity: Record<string, number | undefined>,
   period?: PeriodContext,
   view?: PriceView,
+  visitorSalaryByCity?: Record<string, number | undefined>,
+  usageOverrides?: UsageOverrides,
 ): { ranked: RankedCity[]; excluded: ExcludedCity[] } {
   const ranked: RankedCity[] = []
   const excluded: ExcludedCity[] = []
 
   for (const city of cities) {
-    const result = evaluateBasket(city, lines, visitorHoursByCity[city.id], period, view)
+    const result = evaluateBasket(
+      city,
+      lines,
+      visitorHoursByCity[city.id],
+      period,
+      view,
+      visitorSalaryByCity?.[city.id],
+      usageOverrides,
+    )
     if (result.ok) {
       ranked.push({
         city,

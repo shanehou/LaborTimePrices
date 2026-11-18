@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { CityUsageDialog, type UsageOverridePatch } from "@/components/CityUsageDialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -8,11 +9,14 @@ import { formatMessage, labelCategory, labelItem, t, type Lang } from "@/i18n"
 import type { MessageKey } from "@/i18n/en"
 import {
   DEFAULT_PURCHASE_YEARS,
+  quantityFromField,
   type Horizon,
   type Repayment,
   type Usage,
+  type UsageOverrides,
 } from "@/lib/period"
 import type { CustomBasket } from "@/lib/rankTarget"
+import type { CityRecord } from "@/lib/types"
 
 function RateField({
   value,
@@ -92,14 +96,17 @@ type BasketEditorProps = {
   groups: { category: string; items: string[] }[]
   prices?: readonly PriceSample[]
   hasCities: boolean
+  cities: CityRecord[]
   custom: CustomBasket
   horizon: Horizon
   usage: Usage
+  usageOverrides: UsageOverrides
   onToggle: (item: string, checked: boolean) => void
   onQuantity: (item: string, quantity: string) => void
   onYears: (item: string, years: number | undefined) => void
   onRate: (item: string, rate: number | undefined) => void
   onRepayment: (item: string, repayment: Repayment) => void
+  onUsageOverride: (item: string, cityId: string, patch: UsageOverridePatch) => void
 }
 
 export function BasketEditor({
@@ -107,14 +114,17 @@ export function BasketEditor({
   groups,
   prices,
   hasCities,
+  cities,
   custom,
   horizon,
   usage,
+  usageOverrides,
   onToggle,
   onQuantity,
   onYears,
   onRate,
   onRepayment,
+  onUsageOverride,
 }: BasketEditorProps) {
   return (
     <section className="flex flex-col gap-3">
@@ -227,6 +237,23 @@ export function BasketEditor({
                               <ToggleGroupItem value="principal">{t(lang, "repayPrincipal")}</ToggleGroupItem>
                               <ToggleGroupItem value="payment">{t(lang, "repayPayment")}</ToggleGroupItem>
                             </ToggleGroup>
+                          </div>
+                          <div className="flex flex-col gap-1 text-[10px] text-muted-foreground">
+                            {t(lang, "cityLabel")}
+                            <CityUsageDialog
+                              lang={lang}
+                              item={item}
+                              cities={cities}
+                              usage={usage}
+                              overrides={usageOverrides}
+                              sharedArea={
+                                cadence === "assetArea"
+                                  ? quantityFromField(state.quantity)
+                                  : undefined
+                              }
+                              prices={prices}
+                              onOverride={onUsageOverride}
+                            />
                           </div>
                         </>
                       )}

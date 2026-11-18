@@ -9,7 +9,13 @@ import { describeQuantity, usageText } from "./exportCsv"
 import { formatLaborHours, formatMoney } from "./format"
 import { USD_MONEY, type MoneyFormat } from "./money"
 import { evaluateBasket, type PriceView } from "./labor"
-import { firstUsageBlock, type Horizon, type PeriodContext, type Usage } from "./period"
+import {
+  firstUsageBlock,
+  type Horizon,
+  type PeriodContext,
+  type Usage,
+  type UsageOverrides,
+} from "./period"
 import { CUSTOM_TARGET } from "./rankTarget"
 import type { BasketLine, CityRecord } from "./types"
 
@@ -52,12 +58,22 @@ function cityRow(
   lang: Lang,
   city: CityRecord,
   lines: BasketLine[],
-  override: number | undefined,
+  hoursOverride: number | undefined,
+  salaryOverride: number | undefined,
+  usageOverrides: UsageOverrides | undefined,
   period: PeriodContext,
   view: PriceView,
   money: MoneyFormat,
 ): ShareCardCity {
-  const result = evaluateBasket(city, lines, override, period, view)
+  const result = evaluateBasket(
+    city,
+    lines,
+    hoursOverride,
+    period,
+    view,
+    salaryOverride,
+    usageOverrides,
+  )
   if (!result.ok) {
     return {
       name: city.name,
@@ -80,6 +96,8 @@ export function buildShareCard(input: {
   horizon: Horizon
   cities: CityRecord[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
+  usageOverrides?: UsageOverrides
   comboTarget: string
   customName: string
   lines: BasketLine[]
@@ -116,7 +134,17 @@ export function buildShareCard(input: {
         block || input.cities.length === 0
           ? []
           : input.cities.map((city) =>
-              cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view, money),
+              cityRow(
+                input.lang,
+                city,
+                input.lines,
+                input.overrides[city.id],
+                input.salaryOverrides?.[city.id],
+                input.usageOverrides,
+                period,
+                view,
+                money,
+              ),
             ),
       blocked: block ? exclusionMessage(input.lang, block) : null,
       empty: input.cities.length === 0 ? t(input.lang, "shareCardEmpty") : null,
@@ -155,7 +183,17 @@ export function buildShareCard(input: {
       block || input.cities.length === 0 || input.lines.length === 0
         ? []
         : input.cities.map((city) =>
-            cityRow(input.lang, city, input.lines, input.overrides[city.id], period, view, money),
+            cityRow(
+              input.lang,
+              city,
+              input.lines,
+              input.overrides[city.id],
+              input.salaryOverrides?.[city.id],
+              input.usageOverrides,
+              period,
+              view,
+              money,
+            ),
           ),
     blocked: block
       ? exclusionMessage(input.lang, block)

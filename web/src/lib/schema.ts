@@ -61,6 +61,15 @@ export function validateCityRecord(input: unknown): CityValidationResult {
     return { ok: false, reason: "invalid_schema" }
   }
 
+  let mortgageRate: number | null | undefined
+  if (input.mortgage_rate === undefined || input.mortgage_rate === null) {
+    mortgageRate = input.mortgage_rate === null ? null : undefined
+  } else if (finiteNumber(input.mortgage_rate)) {
+    mortgageRate = input.mortgage_rate
+  } else {
+    return { ok: false, reason: "invalid_schema" }
+  }
+
   const scrapedAt = optionalString(input.scraped_at)
   if (!scrapedAt.ok) return { ok: false, reason: "invalid_schema" }
   const sourceUrl = optionalString(input.source_url)
@@ -87,6 +96,7 @@ export function validateCityRecord(input: unknown): CityValidationResult {
     monthly_net_salary: monthlyNetSalary,
     prices: canonicalizePrices(prices),
   }
+  if (mortgageRate !== undefined) city.mortgage_rate = mortgageRate
   if (monthlyWorkHours !== undefined) city.monthly_work_hours = monthlyWorkHours
   if (scrapedAt.value !== undefined) city.scraped_at = scrapedAt.value
   if (sourceUrl.value !== undefined) city.source_url = sourceUrl.value

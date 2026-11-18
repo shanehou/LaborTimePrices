@@ -3,6 +3,7 @@ import { BasketEditor } from "@/components/BasketEditor"
 import { HorizonToggle } from "@/components/HorizonBar"
 import { ItemUsage } from "@/components/ItemUsage"
 import { Ranking } from "@/components/Ranking"
+import type { UsageOverridePatch } from "@/components/CityUsageDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -18,20 +19,24 @@ import { CUSTOM_TARGET, PRESET_TARGET } from "@/lib/rankTarget"
 import { exclusionMessage, labelItem, t, type Lang } from "@/i18n"
 import { comboDetail } from "@/lib/combo"
 import type { ComboDraft, ComboMode, SavedCombo } from "@/lib/combos"
-import { describeQuantity } from "@/lib/exportCsv"
+import { describeQuantity, describeCityFinancing } from "@/lib/exportCsv"
 import { formatLaborHours, formatMoney } from "@/lib/format"
 import { priceUsdFor } from "@/data/measure"
+import { cadenceOf } from "@/data/cadence"
 import { findPrice, evaluateBasket, type PriceView } from "@/lib/labor"
 import { USD_MONEY, type MoneyFormat } from "@/lib/money"
 import {
+  cityPeriod,
   lineSpendUsd,
   quantityFromField,
+  resolveFinancing,
   setUsageNumber,
   setUsageRepayment,
   usageBlock,
   type Horizon,
   type PeriodContext,
   type Usage,
+  type UsageOverrides,
 } from "@/lib/period"
 import type { CustomBasket } from "@/lib/rankTarget"
 import type { BasketLine, CityRecord } from "@/lib/types"
@@ -42,6 +47,8 @@ type ComboPanelProps = {
   lang: Lang
   cities: CityRecord[]
   overrides: Record<string, number>
+  salaryOverrides: Record<string, number>
+  usageOverrides: UsageOverrides
   mode: ComboMode
   activeId: string | null
   combos: SavedCombo[]
@@ -54,6 +61,7 @@ type ComboPanelProps = {
   onHorizon: (horizon: Horizon) => void
   usage: Usage
   onUsage: (usage: Usage) => void
+  onUsageOverride: (item: string, cityId: string, patch: UsageOverridePatch) => void
   onToggle: (item: string, checked: boolean) => void
   onQuantity: (item: string, quantity: string) => void
   onSelectPreset: () => void
@@ -75,6 +83,8 @@ export function ComboPanel({
   lang,
   cities,
   overrides,
+  salaryOverrides,
+  usageOverrides,
   mode,
   activeId,
   combos,
@@ -87,6 +97,7 @@ export function ComboPanel({
   onHorizon,
   usage,
   onUsage,
+  onUsageOverride,
   onToggle,
   onQuantity,
   onSelectPreset,
@@ -231,14 +242,17 @@ export function ComboPanel({
           groups={groups}
           prices={view.prices}
           hasCities={cities.length > 0}
+          cities={cities}
           custom={custom}
           horizon={horizon}
           usage={usage}
+          usageOverrides={usageOverrides}
           onToggle={onToggle}
           onQuantity={onQuantity}
           onYears={(item, years) => onUsage(setUsageNumber(usage, "years", item, years))}
           onRate={(item, rate) => onUsage(setUsageNumber(usage, "rates", item, rate))}
           onRepayment={(item, repayment) => onUsage(setUsageRepayment(usage, item, repayment))}
+          onUsageOverride={onUsageOverride}
         />
       )}
 
@@ -267,6 +281,8 @@ export function ComboPanel({
               <TableBody>
                 {rows.map((row) => {
                   const blocked = usageBlock(row.item, row.quantity, period)
+                  const rowCadence = cadenceOf(row.item)
+                  const isPurchase = rowCadence === "asset" || rowCadence === "assetArea"
                   return (
                     <TableRow key={row.item}>
                       <TableCell className="whitespace-normal">
@@ -297,13 +313,29 @@ export function ComboPanel({
                       {cities.map((city) => {
                         const price = findPrice(city, row.item)
                         const usd = price ? priceUsdFor(lang, price, view.prices) : 0
+                        const scoped = cityPeriod(period, city, usageOverrides)
                         const spent =
                           blocked || !price
                             ? null
-                            : lineSpendUsd(usd, row.item, row.quantity, period)
+                            : lineSpendUsd(usd, row.item, row.quantity, scoped)
+                        const financing =
+                          isPurchase && horizon !== "listed"
+                            ? resolveFinancing(row.item, usage, city, usageOverrides)
+                            : null
                         return (
                           <TableCell key={city.id} className="text-right nums">
-                            {spent && spent.ok ? formatMoney(lang, spent.usd, money) : "—"}
+                            {spent && spent.ok ? (
+                              <>
+                                <span className="block">{formatMoney(lang, spent.usd, money)}</span>
+                                {financing?.citySpecific && (
+                                  <span className="block text-[10px] leading-snug text-muted-foreground">
+                                    {describeCityFinancing(lang, financing)}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              "—"
+                            )}
                           </TableCell>
                         )
                       })}
@@ -314,7 +346,15 @@ export function ComboPanel({
                   <TableCell className="font-medium">{t(lang, "comboTotal")}</TableCell>
                   <TableCell />
                   {cities.map((city) => {
-                    const result = evaluateBasket(city, lines, overrides[city.id], period, view)
+                    const result = evaluateBasket(
+                      city,
+                      lines,
+                      overrides[city.id],
+                      period,
+                      view,
+                      salaryOverrides[city.id],
+                      usageOverrides,
+                    )
                     return (
                       <TableCell key={city.id} className="text-right nums">
                         {result.ok ? (
@@ -346,6 +386,8 @@ export function ComboPanel({
         cities={cities}
         lines={lines}
         overrides={overrides}
+        salaryOverrides={salaryOverrides}
+        usageOverrides={usageOverrides}
         period={period}
         customEmpty={editing && lines.length === 0}
         money={money}

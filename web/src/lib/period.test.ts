@@ -3,11 +3,18 @@ import { ITEM_CADENCE, cadenceOf } from "../data/cadence"
 import { ITEMS, NUMBEO_ITEMS } from "../data/items"
 import { evaluateBasket } from "./labor"
 import {
+  DEFAULT_PURCHASE_YEARS,
   emptyUsage,
+  emptyUsageOverrides,
   fillEmptyUsage,
   lineSpendUsd,
+  MORTGAGE_TERM_YEARS,
+  resolveFinancing,
   setUsageNumber,
+  setUsageOverrideNumber,
+  setUsageOverrideRepayment,
   setUsageRepayment,
+  usageOverrideCityIds,
   type PeriodContext,
 } from "./period"
 import type { CityRecord } from "./types"
@@ -149,5 +156,114 @@ describe("lineSpendUsd", () => {
     expect(years.years[area]).toBe(20)
     expect(years.years[ITEMS.coffee]).toBeUndefined()
     expect(fillEmptyUsage(years, "years", 8).years[car]).toBe(20)
+  })
+})
+
+describe("per-city financing", () => {
+  const shanghai = { id: "3781", mortgage_rate: 3.3 as number | null }
+  const zurich = { id: "1064", mortgage_rate: null }
+  const lisbon = { id: "5", mortgage_rate: null }
+
+  it("resolves visitor-city > shared > Numbeo rate > nothing", () => {
+    const usage = setUsageNumber(emptyUsage(), "rates", car, 5)
+    expect(resolveFinancing(car, usage).rate).toBe(5)
+    expect(resolveFinancing(car, usage, shanghai).rate).toBe(5)
+    const overrides = setUsageOverrideNumber(emptyUsageOverrides(), "rates", car, "3781", 6.2)
+    expect(resolveFinancing(car, usage, shanghai, overrides).rate).toBe(6.2)
+    expect(resolveFinancing(car, usage, zurich, overrides).rate).toBe(5)
+
+    const bare = emptyUsage()
+    expect(resolveFinancing(car, bare).rate).toBeUndefined()
+    expect(resolveFinancing(car, bare, zurich).rate).toBeUndefined()
+    expect(resolveFinancing(car, bare, shanghai).rate).toBe(3.3)
+  })
+
+  it("pairs Numbeo's rate with its 20-year term only when years are unset", () => {
+    const bare = emptyUsage()
+    expect(resolveFinancing(car, bare, shanghai)).toMatchObject({
+      years: MORTGAGE_TERM_YEARS,
+      rate: 3.3,
+      rateSource: "city",
+      citySpecific: true,
+    })
+    expect(resolveFinancing(car, bare, zurich).years).toBe(DEFAULT_PURCHASE_YEARS)
+
+    const sharedYears = setUsageNumber(bare, "years", car, 8)
+    expect(resolveFinancing(car, sharedYears, shanghai).years).toBe(8)
+
+    const cityYears = setUsageOverrideNumber(emptyUsageOverrides(), "years", car, "3781", 15)
+    expect(resolveFinancing(car, sharedYears, shanghai, cityYears).years).toBe(15)
+  })
+
+  it("marks city-specific resolution and lists overridden cities", () => {
+    const overrides = emptyUsageOverrides()
+    expect(resolveFinancing(car, emptyUsage(), shanghai).citySpecific).toBe(true)
+    expect(resolveFinancing(car, emptyUsage(), zurich).citySpecific).toBe(false)
+    const withRepayment = setUsageOverrideRepayment(overrides, car, "1064", "principal")
+    expect(resolveFinancing(car, emptyUsage(), zurich, withRepayment)).toMatchObject({
+      repayment: "principal",
+      citySpecific: true,
+    })
+    expect(usageOverrideCityIds(withRepayment, car)).toEqual(["1064"])
+  })
+
+  it("uses per-city years, rate, repayment, and area in the spend", () => {
+    const usage = setUsageNumber(emptyUsage(), "years", area, 10)
+    const base: PeriodContext = { horizon: "month", mode: "combo", usage }
+    // 15000/m² × 70 m² over 10 years, straight line: 8750 / month.
+    expect(lineSpendUsd(15000, area, 70, base)).toEqual({ ok: true, usd: 8750 })
+
+    const overrides = setUsageOverrideNumber(emptyUsageOverrides(), "area", area, "5", 90)
+    const lisbonPeriod: PeriodContext = {
+      ...base,
+      city: lisbon,
+      overrides: setUsageOverrideNumber(overrides, "years", area, "5", 20),
+    }
+    expect(lineSpendUsd(15000, area, 70, lisbonPeriod)).toEqual({ ok: true, usd: 5625 })
+
+    const zurichPeriod: PeriodContext = { ...base, city: zurich, overrides }
+    expect(lineSpendUsd(15000, area, 70, zurichPeriod)).toEqual({ ok: true, usd: 8750 })
+  })
+
+  it("finances with the Numbeo rate and term inside evaluateBasket", () => {
+    const sample: CityRecord = {
+      id: "3781",
+      name: "Shanghai",
+      country: "China",
+      monthly_net_salary: 2400,
+      monthly_work_hours: 160,
+      mortgage_rate: 3.3,
+      prices: [{ category: "Buy Apartment Price", item: area, price_usd: 15000 }],
+    }
+    const period: PeriodContext = { horizon: "month", mode: "combo", usage: emptyUsage() }
+    const result = evaluateBasket(sample, [{ item: area, quantity: 70 }], undefined, period)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // 20-year fixed at 3.3% with the default equal installment: n = 240.
+    const principal = 15000 * 70
+    const months = 240
+    const monthlyRate = 0.033 / 12
+    const growth = (1 + monthlyRate) ** months
+    const expected = (principal * monthlyRate * growth) / (growth - 1)
+    expect(result.totalUsd).toBeCloseTo(expected, 6)
+  })
+
+  it("finances with equal principal when the city overrides the repayment", () => {
+    const overrides = setUsageOverrideRepayment(emptyUsageOverrides(), area, "3781", "principal")
+    const period: PeriodContext = {
+      horizon: "month",
+      mode: "combo",
+      usage: emptyUsage(),
+      city: { id: "3781", mortgage_rate: 3.3 },
+      overrides,
+    }
+    const spent = lineSpendUsd(15000, area, 70, period)
+    expect(spent.ok).toBe(true)
+    if (!spent.ok) return
+    const principal = 15000 * 70
+    const months = 240
+    const monthlyRate = 0.033 / 12
+    const expected = principal / months + (principal * monthlyRate * (months + 1)) / (2 * months)
+    expect(spent.usd).toBeCloseTo(expected, 6)
   })
 })

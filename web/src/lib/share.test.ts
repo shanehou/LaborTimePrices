@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { ITEMS, NUMBEO_ITEMS } from "../data/items"
-import { emptyUsage } from "./period"
+import { emptyUsage, emptyUsageOverrides } from "./period"
 import { decodeShare, encodeShare, type ShareSnapshot } from "./share"
 
 const car = "Volkswagen Golf 1.5 (or Equivalent New Compact Car)"
@@ -13,6 +13,7 @@ function snapshot(partial: Partial<ShareSnapshot> = {}): ShareSnapshot {
       { id: "2922", name: "New York" },
     ],
     hours: { 3781: 160 },
+    salaries: { 3781: 2500 },
     lang: "zh",
     tab: "combos",
     unit: "usd",
@@ -32,6 +33,12 @@ function snapshot(partial: Partial<ShareSnapshot> = {}): ShareSnapshot {
       rates: { [car]: 3.5 },
       repayments: { [car]: "principal" },
     },
+    usageOverrides: {
+      ...emptyUsageOverrides(),
+      years: { [area]: { 3781: 20 } },
+      rates: { [area]: { 3781: 3.3, 2922: 6.5 } },
+      repayments: { [car]: { 3781: "principal" } },
+    },
     ...partial,
   }
 }
@@ -43,6 +50,47 @@ describe("share hash", () => {
     expect(encoded).not.toContain("price")
     const decoded = decodeShare(`#${encoded}`)
     expect(decoded).toEqual(snapshot())
+  })
+
+  it("round-trips per-city salaries and usage overrides", () => {
+    const encoded = encodeShare(snapshot())
+    expect(encoded).toContain("sa=3781%3A2500")
+    expect(encoded).toContain("yc=")
+    expect(encoded).toContain("irc=")
+    expect(encoded).toContain("imc=")
+    const decoded = decodeShare(encoded)
+    expect(decoded?.salaries).toEqual({ 3781: 2500 })
+    expect(decoded?.usageOverrides.years[area]).toEqual({ 3781: 20 })
+    expect(decoded?.usageOverrides.rates[area]).toEqual({ 3781: 3.3, 2922: 6.5 })
+    expect(decoded?.usageOverrides.repayments[car]).toEqual({ 3781: "principal" })
+  })
+
+  it("drops usage overrides for cities that are not in the link", () => {
+    const encoded = encodeShare(
+      snapshot({
+        cities: [{ id: "2922", name: "New York" }],
+        usageOverrides: {
+          ...emptyUsageOverrides(),
+          rates: { [area]: { 3781: 3.3, 2922: 6.5 } },
+        },
+      }),
+    )
+    const decoded = decodeShare(encoded)
+    expect(decoded?.usageOverrides.rates[area]).toEqual({ 2922: 6.5 })
+  })
+
+  it("ignores malformed per-city triples and salaries", () => {
+    const carIndex = NUMBEO_ITEMS.indexOf(car)
+    const areaIndex = NUMBEO_ITEMS.indexOf(area)
+    const decoded = decodeShare(
+      `#s=1&c=3781&n=Shanghai&sa=3781:0|bad|2922:99` +
+        `&yc=${carIndex}:3781:20|x:1:5|${carIndex}:nope` +
+        `&irc=${areaIndex}:3781:-1&imc=${carIndex}:3781:zz`,
+    )
+    expect(decoded?.salaries).toEqual({ 2922: 99 })
+    expect(decoded?.usageOverrides.years[car]).toEqual({ 3781: 20 })
+    expect(decoded?.usageOverrides.rates).toEqual({})
+    expect(decoded?.usageOverrides.repayments).toEqual({})
   })
 
   it("keeps a city name that contains a comma or CJK text", () => {

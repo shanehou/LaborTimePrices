@@ -19,6 +19,7 @@ export const SEARCH_URL = "https://www.numbeo.com/common/CitySearchJson"
 export const MIN_PRICES = 10
 export const SEARCH_RESULTS_LIMIT = 10
 export const SALARY_ITEM = "Average Monthly Net Salary (After Tax)"
+export const MORTGAGE_RATE_ITEM = "Mortgage Interest Rate"
 export const CITY_ID_PATTERN = /^\d{1,7}$/
 
 const COLLECTOR_HEADERS = {
@@ -221,6 +222,7 @@ export function parseCityHtml(html, { id, source_url, scraped_at } = {}) {
   const source = String(html ?? "")
   let category = ""
   let monthlySalary = null
+  let mortgageRate = null
   const prices = []
 
   for (const match of source.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
@@ -246,8 +248,14 @@ export function parseCityHtml(html, { id, source_url, scraped_at } = {}) {
       continue
     }
     // Mortgage interest rates are percentages, not USD prices. Numbeo writes
-    // them as "(20-Year Fixed, in %)" or "(in %)".
-    if (item.includes("in %")) continue
+    // them as "(20-Year Fixed, in %)" or "(in %)". The city-level rate is kept
+    // as its own field; every other percentage row is dropped.
+    if (item.includes("in %")) {
+      if (item.includes(MORTGAGE_RATE_ITEM) && price !== null && price > 0) {
+        mortgageRate = price
+      }
+      continue
+    }
     if (price === null || price <= 0) continue
 
     prices.push({ category, item, price_usd: price })
@@ -267,6 +275,7 @@ export function parseCityHtml(html, { id, source_url, scraped_at } = {}) {
     name: identity.name,
     country: identity.country,
     monthly_net_salary: monthlySalary,
+    mortgage_rate: mortgageRate,
     prices: canonicalizePrices(prices),
     scraped_at: scraped_at ?? new Date().toISOString(),
     source_url: source_url ?? "",
@@ -280,6 +289,15 @@ export function validateCityRecord(record) {
   if (typeof record.country !== "string" || record.country.trim() === "") return false
   const salary = record.monthly_net_salary
   if (salary !== null && !(typeof salary === "number" && Number.isFinite(salary) && salary > 0)) {
+    return false
+  }
+  // Optional so legacy KV entries without the rate keep validating.
+  const mortgageRate = record.mortgage_rate
+  if (
+    mortgageRate !== undefined &&
+    mortgageRate !== null &&
+    !(typeof mortgageRate === "number" && Number.isFinite(mortgageRate) && mortgageRate > 0)
+  ) {
     return false
   }
   // The scraper always fills these in; tolerate their absence in legacy KV data.

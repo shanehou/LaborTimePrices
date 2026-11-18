@@ -19,7 +19,7 @@ import {
 import { formatLaborHours, formatMoney, formatPlain } from "@/lib/format"
 import { USD_MONEY, type MoneyFormat } from "@/lib/money"
 import { rankCities, type PriceView } from "@/lib/labor"
-import { firstUsageBlock, type PeriodContext } from "@/lib/period"
+import { firstUsageBlock, type PeriodContext, type UsageOverrides } from "@/lib/period"
 import type { BasketLine, CityRecord } from "@/lib/types"
 
 type RankingProps = {
@@ -27,6 +27,8 @@ type RankingProps = {
   cities: CityRecord[]
   lines: BasketLine[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
+  usageOverrides?: UsageOverrides
   period: PeriodContext
   customEmpty: boolean
   money?: MoneyFormat
@@ -41,6 +43,8 @@ export function Ranking({
   cities,
   lines,
   overrides,
+  salaryOverrides,
+  usageOverrides,
   period,
   customEmpty,
   money = USD_MONEY,
@@ -55,7 +59,7 @@ export function Ranking({
   const result =
     block || customEmpty || lines.length === 0
       ? null
-      : rankCities(cities, lines, overrides, period, view)
+      : rankCities(cities, lines, overrides, period, view, salaryOverrides, usageOverrides)
 
   return (
     <section className="flex flex-col gap-4">

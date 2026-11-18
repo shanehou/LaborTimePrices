@@ -10,18 +10,27 @@ import {
 import { percentDelta } from "./compare"
 import { formatPlain } from "./format"
 import { USD_MONEY, type MoneyFormat } from "./money"
-import { evaluateBasket, findPrice, laborHoursForPrice, resolveMonthlyHours } from "./labor"
 import {
+  evaluateBasket,
+  findPrice,
+  laborHoursForPrice,
+  resolveMonthlyHours,
+  resolveMonthlyNetSalary,
+} from "./labor"
+import {
+  cityPeriod,
   firstUsageBlock,
   horizonFactor,
   isPositiveFinite,
   lineSpendUsd,
   purchaseYears,
   usageBlock,
+  type Financing,
   type Horizon,
   type PeriodContext,
   type Repayment,
   type Usage,
+  type UsageOverrides,
 } from "./period"
 
 import type { BasketLine, CityRecord } from "./types"
@@ -105,11 +114,14 @@ function cityFigures(
   item: string,
   quantity: number,
   period: PeriodContext,
-  override: number | undefined,
+  hoursOverride: number | undefined,
+  salaryOverride: number | undefined,
+  usageOverrides: UsageOverrides | undefined,
   prices: readonly PriceSample[],
   money: MoneyFormat,
 ): Figures {
-  if (usageBlock(item, quantity, period)) {
+  const scoped = cityPeriod(period, city, usageOverrides)
+  if (usageBlock(item, quantity, scoped)) {
     return { usd: "", hours: "", usdValue: null, hoursValue: null }
   }
   const price = findPrice(city, item)
@@ -120,16 +132,16 @@ function cityFigures(
       : exclusionMessage(lang, { code: "non_positive_price", item }, prices)
     return { usd: reason, hours: "", usdValue: null, hoursValue: null }
   }
-  const spent = lineSpendUsd(usd, item, quantity, period)
+  const spent = lineSpendUsd(usd, item, quantity, scoped)
   if (!spent.ok) {
     return { usd: exclusionMessage(lang, spent.reason), hours: "", usdValue: null, hoursValue: null }
   }
-  const resolved = resolveMonthlyHours(city, override)
-  const salary = city.monthly_net_salary
-  if (!resolved.ok || salary === null || !(salary > 0)) {
+  const resolved = resolveMonthlyHours(city, hoursOverride)
+  const salary = resolveMonthlyNetSalary(city, salaryOverride)
+  if (!resolved.ok || !salary.ok) {
     return { usd: csvNumber(displayAmount(spent.usd, money)), hours: "", usdValue: spent.usd, hoursValue: null }
   }
-  const hours = laborHoursForPrice(spent.usd, salary, resolved.hours)
+  const hours = laborHoursForPrice(spent.usd, salary.salary, resolved.hours)
   return {
     usd: csvNumber(displayAmount(spent.usd, money)),
     hours: csvNumber(hours),
@@ -176,6 +188,17 @@ function purchaseDetailSuffix(lang: Lang, detail?: PurchaseDetail): string {
   const percent = formatMessage(t(lang, "qtyRate"), { rate: formatPlain(lang, rate, 2) })
   const mode = t(lang, detail?.repayment === "principal" ? "repayPrincipal" : "repayPayment")
   return ` · ${percent} ${mode}`
+}
+
+/** Resolved years / rate / repayment for one city, for cell sub-labels. */
+export function describeCityFinancing(lang: Lang, financing: Financing): string {
+  const span = formatMessage(t(lang, "qtyYears"), {
+    count: formatPlain(lang, financing.years, 2),
+  })
+  return `${span}${purchaseDetailSuffix(lang, {
+    rate: financing.rate,
+    repayment: financing.repayment,
+  })}`
 }
 
 /** How a combo line's quantity should read, including floor area, years, and interest. */
@@ -232,6 +255,8 @@ export function buildItemsCsv(input: {
   cities: CityRecord[]
   items: string[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
+  usageOverrides?: UsageOverrides
   horizon: Horizon
   usage: Usage
   money?: MoneyFormat
@@ -250,7 +275,18 @@ export function buildItemsCsv(input: {
   const rows = [header]
   for (const item of input.items) {
     const figures = input.cities.map((city) =>
-      cityFigures(input.lang, city, item, 1, period, input.overrides[city.id], prices, money),
+      cityFigures(
+        input.lang,
+        city,
+        item,
+        1,
+        period,
+        input.overrides[city.id],
+        input.salaryOverrides?.[city.id],
+        input.usageOverrides,
+        prices,
+        money,
+      ),
     )
     rows.push([
       labelItem(input.lang, item, prices),
@@ -267,6 +303,8 @@ export function buildComboCsv(input: {
   cities: CityRecord[]
   lines: BasketLine[]
   overrides: Record<string, number>
+  salaryOverrides?: Record<string, number>
+  usageOverrides?: UsageOverrides
   horizon: Horizon
   usage: Usage
   money?: MoneyFormat
@@ -283,7 +321,18 @@ export function buildComboCsv(input: {
   for (const line of input.lines) {
     const block = usageBlock(line.item, line.quantity, period)
     const figures = input.cities.map((city) =>
-      cityFigures(input.lang, city, line.item, line.quantity, period, input.overrides[city.id], prices, money),
+      cityFigures(
+        input.lang,
+        city,
+        line.item,
+        line.quantity,
+        period,
+        input.overrides[city.id],
+        input.salaryOverrides?.[city.id],
+        input.usageOverrides,
+        prices,
+        money,
+      ),
     )
     const cadence = cadenceOf(line.item)
     const quantityText =
@@ -318,7 +367,15 @@ export function buildComboCsv(input: {
     ])
   } else {
     const totals = input.cities.map((city) => {
-      const result = evaluateBasket(city, input.lines, input.overrides[city.id], period, view)
+      const result = evaluateBasket(
+        city,
+        input.lines,
+        input.overrides[city.id],
+        period,
+        view,
+        input.salaryOverrides?.[city.id],
+        input.usageOverrides,
+      )
       if (!result.ok) return [exclusionMessage(input.lang, result.reason, prices), ""]
       return [csvNumber(displayAmount(result.totalUsd, money)), csvNumber(result.hours)]
     })

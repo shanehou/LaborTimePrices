@@ -87,6 +87,23 @@ describe("validateCityRecord", () => {
     if (withoutHours.ok) expect(withoutHours.city).not.toHaveProperty("monthly_work_hours")
   })
 
+  it("accepts an optional mortgage_rate and ignores null", () => {
+    const withRate = validateCityRecord({ ...validCity, mortgage_rate: 4.15 })
+    expect(withRate.ok).toBe(true)
+    if (withRate.ok) expect(withRate.city.mortgage_rate).toBe(4.15)
+
+    const nullRate = validateCityRecord({ ...validCity, mortgage_rate: null })
+    expect(nullRate.ok).toBe(true)
+    if (nullRate.ok) expect(nullRate.city.mortgage_rate).toBeNull()
+
+    // Like the salary, a finite number is kept (even non-positive) and the
+    // financing resolution ignores values it cannot use.
+    expect(validateCityRecord({ ...validCity, mortgage_rate: 0 }).ok).toBe(true)
+    for (const bad of ["4.15", Number.NaN, { rate: 4 }]) {
+      expect(validateCityRecord({ ...validCity, mortgage_rate: bad }).ok).toBe(false)
+    }
+  })
+
   it("rejects payloads that are not a city record", () => {
     for (const input of [null, undefined, [], "city", { cities: [] }]) {
       expect(validateCityRecord(input).ok).toBe(false)

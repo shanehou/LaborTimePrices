@@ -2,10 +2,20 @@ import { canonicalItemName } from "../data/measure"
 import type { Lang } from "../i18n"
 import { emptyLibrary, normalizeLibrary, type ComboLibrary } from "./combos"
 import { isCurrencyCode, parseFxTable, type CurrencyCode, type FxTable } from "./money"
-import { emptyUsage, repaymentMap, type Horizon, type Usage } from "./period"
+import {
+  emptyUsage,
+  emptyUsageOverrides,
+  normalizeUsageOverrides,
+  repaymentMap,
+  type Horizon,
+  type Usage,
+  type UsageOverrides,
+} from "./period"
 
 const LANG_KEY = "ltp.lang"
 const HOURS_KEY = "ltp.workHours"
+const SALARY_KEY = "ltp.netSalary"
+const USAGE_OVERRIDES_KEY = "ltp.usageOverrides"
 const PERIOD_KEY = "ltp.period"
 const COMBOS_KEY = "ltp.combos"
 const LAST_HASH_KEY = "ltp.lastHash"
@@ -73,6 +83,53 @@ export function writeHourOverride(cityId: string, hours: number | null): Record<
   }
   storage()?.setItem(HOURS_KEY, JSON.stringify(next))
   return next
+}
+
+/** Per-city net salaries, stored in USD. */
+export function readSalaryOverrides(): Record<string, number> {
+  const raw = storage()?.getItem(SALARY_KEY)
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
+    const overrides: Record<string, number> = {}
+    for (const [cityId, salary] of Object.entries(parsed)) {
+      if (typeof salary === "number" && Number.isFinite(salary) && salary > 0) {
+        overrides[cityId] = salary
+      }
+    }
+    return overrides
+  } catch {
+    return {}
+  }
+}
+
+export function writeSalaryOverride(
+  cityId: string,
+  salaryUsd: number | null,
+): Record<string, number> {
+  const next = readSalaryOverrides()
+  if (salaryUsd === null || !Number.isFinite(salaryUsd) || salaryUsd <= 0) {
+    delete next[cityId]
+  } else {
+    next[cityId] = salaryUsd
+  }
+  storage()?.setItem(SALARY_KEY, JSON.stringify(next))
+  return next
+}
+
+export function readUsageOverrides(): UsageOverrides {
+  const raw = storage()?.getItem(USAGE_OVERRIDES_KEY)
+  if (!raw) return emptyUsageOverrides()
+  try {
+    return normalizeUsageOverrides(JSON.parse(raw) as unknown)
+  } catch {
+    return emptyUsageOverrides()
+  }
+}
+
+export function writeUsageOverrides(overrides: UsageOverrides) {
+  storage()?.setItem(USAGE_OVERRIDES_KEY, JSON.stringify(normalizeUsageOverrides(overrides)))
 }
 
 function positiveMap(value: unknown): Record<string, number> {

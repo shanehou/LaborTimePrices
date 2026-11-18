@@ -1,6 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { emptyUsage } from "./period"
-import { languageFromTag, readComboLibrary, readCurrency, readHourOverrides, readPeriod, writeComboLibrary, writeCurrency, writeHourOverride, writePeriod } from "./storage"
+import {
+  languageFromTag,
+  readComboLibrary,
+  readCurrency,
+  readHourOverrides,
+  readPeriod,
+  readSalaryOverrides,
+  readUsageOverrides,
+  writeComboLibrary,
+  writeCurrency,
+  writeHourOverride,
+  writePeriod,
+  writeSalaryOverride,
+  writeUsageOverrides,
+} from "./storage"
 
 describe("languageFromTag", () => {
   it("uses Chinese only when the tag starts with zh", () => {
@@ -36,6 +50,63 @@ describe("writeHourOverride", () => {
     expect(readHourOverrides()).toEqual({ shanghai: 60, zurich: 100 })
     writeHourOverride("shanghai", null)
     expect(readHourOverrides()).toEqual({ zurich: 100 })
+  })
+
+  it("stores per-city salaries in USD and per-city usage overrides", () => {
+    const memory = new Map<string, string>()
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value)
+      },
+      removeItem: (key: string) => {
+        memory.delete(key)
+      },
+    })
+
+    writeSalaryOverride("shanghai", 2500)
+    writeSalaryOverride("zurich", 5100.5)
+    writeSalaryOverride("shanghai", 2600)
+    expect(readSalaryOverrides()).toEqual({ shanghai: 2600, zurich: 5100.5 })
+    writeSalaryOverride("shanghai", null)
+    expect(readSalaryOverrides()).toEqual({ zurich: 5100.5 })
+
+    const car = "Volkswagen Golf 1.5 (or Equivalent New Compact Car)"
+    writeUsageOverrides({
+      area: {},
+      years: { [car]: { "3781": 20 } },
+      rates: { [car]: { "3781": 3.3, "1064": 1.1 } },
+      repayments: { [car]: { "3781": "principal" } },
+    })
+    expect(readUsageOverrides()).toEqual({
+      area: {},
+      years: { [car]: { "3781": 20 } },
+      rates: { [car]: { "3781": 3.3, "1064": 1.1 } },
+      repayments: { [car]: { "3781": "principal" } },
+    })
+
+    // Broken payloads fall back to empty instead of throwing.
+    memory.set("ltp.usageOverrides", "{")
+    expect(readUsageOverrides()).toEqual({
+      area: {},
+      years: {},
+      rates: {},
+      repayments: {},
+    })
+    memory.set(
+      "ltp.usageOverrides",
+      JSON.stringify({
+        years: { [car]: { "3781": 20, "9": -5, "": 3 } },
+        rates: { [car]: { "3781": "high" } },
+        repayments: { [car]: { "3781": "interest-only" } },
+      }),
+    )
+    expect(readUsageOverrides()).toEqual({
+      area: {},
+      years: { [car]: { "3781": 20 } },
+      rates: {},
+      repayments: {},
+    })
   })
 
   it("stores the horizon and drops non-positive usage", () => {
