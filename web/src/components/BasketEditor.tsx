@@ -141,8 +141,8 @@ export function BasketEditor({
                   const inputId = `qty-${item}`
                   const cadence = cadenceOf(item)
                   const imperialArea = showsImperialArea(lang, item, prices)
-                  const showYears =
-                    horizon !== "listed" && (cadence === "asset" || cadence === "assetArea")
+                  const isPurchase = cadence === "asset" || cadence === "assetArea"
+                  const showYears = horizon !== "listed" && isPurchase
                   const named = labelItem(lang, item, prices)
                   return (
                     <li
@@ -174,6 +174,11 @@ export function BasketEditor({
                             onChange={(event) => onQuantity(item, event.target.value)}
                           />
                         </label>
+                      )}
+                      {isPurchase && state.checked && horizon === "listed" && (
+                        <p className="w-full text-[10px] leading-snug text-muted-foreground">
+                          {t(lang, "usageAmortHidden")}
+                        </p>
                       )}
                       {showYears && state.checked && (
                         <>

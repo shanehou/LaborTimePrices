@@ -137,6 +137,8 @@ export const zh = {
   usageYears: "摊销年数",
   usageRate: "年利率 %",
   usageRepayment: "还款方式",
+  usageAmortHidden:
+    "原标价按整价计算。切到折合每月或折合每年，可设置摊销年数、年利率和还款方式。",
   usageArea: "平方米",
   usageAreaImperial: "平方英尺",
   customNameLabel: "组合名称",

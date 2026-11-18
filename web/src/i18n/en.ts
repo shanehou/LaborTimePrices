@@ -139,6 +139,8 @@ export const en = {
   usageYears: "Years to spread",
   usageRate: "Annual rate %",
   usageRepayment: "Repayment",
+  usageAmortHidden:
+    "As listed keeps the full price. Switch to As a month or As a year to set years, interest, and repayment.",
   usageArea: "Square meters",
   usageAreaImperial: "Square feet",
   customNameLabel: "Combo name",
