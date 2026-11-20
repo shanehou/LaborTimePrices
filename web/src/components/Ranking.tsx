@@ -118,8 +118,15 @@ export function Ranking({
                   <p className="text-sm text-muted-foreground">
                     {labelCountry(lang, row.city.country)}
                   </p>
-                  {row.source === "visitor" && (
-                    <Badge className="mt-1">{t(lang, "hoursVisitor")}</Badge>
+                  {(row.source === "visitor" || row.salarySource === "visitor") && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      {row.source === "visitor" && (
+                        <Badge>{t(lang, "hoursVisitor")}</Badge>
+                      )}
+                      {row.salarySource === "visitor" && (
+                        <Badge>{t(lang, "salaryVisitor")}</Badge>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="text-right">

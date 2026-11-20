@@ -33,6 +33,7 @@ export type LaborSuccess = {
   hourlyWage: number
   monthlyHours: number
   source: HoursSource
+  salarySource: SalarySource
 }
 
 export type LaborFailure = {
@@ -47,6 +48,7 @@ export type RankedCity = {
   hourlyWage: number
   monthlyHours: number
   source: HoursSource
+  salarySource: SalarySource
 }
 
 export type ExcludedCity = {
@@ -186,6 +188,7 @@ export function evaluateBasket(
     hourlyWage,
     monthlyHours: resolved.hours,
     source: resolved.source,
+    salarySource: resolvedSalary.source,
   }
 }
 
@@ -219,6 +222,7 @@ export function rankCities(
         hourlyWage: result.hourlyWage,
         monthlyHours: result.monthlyHours,
         source: result.source,
+        salarySource: result.salarySource,
       })
     } else {
       excluded.push({ city, reason: result.reason })

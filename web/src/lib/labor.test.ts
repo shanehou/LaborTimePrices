@@ -3,7 +3,10 @@ import { ITEMS } from "../data/items"
 import {
   DEFAULT_MONTHLY_HOURS,
   evaluateBasket,
+  findPrice,
+  groupCatalog,
   laborHoursForPrice,
+  listCatalog,
   rankCities,
   resolveMonthlyHours,
   resolveMonthlyNetSalary,
@@ -159,6 +162,27 @@ describe("labor hours", () => {
     })
   })
 
+  it("keeps each city's hours and salary sources through the ranking", () => {
+    const baseline = city({ id: "baseline", monthly_work_hours: 100, monthly_net_salary: 2000 })
+    const adjusted = city({ id: "adjusted", monthly_work_hours: 100, monthly_net_salary: 2000 })
+    const { ranked } = rankCities(
+      [baseline, adjusted],
+      [{ item: ITEMS.coffee, quantity: 1 }],
+      {},
+      undefined,
+      undefined,
+      { adjusted: 4000 },
+    )
+    expect(ranked.find((row) => row.city.id === "baseline")).toMatchObject({
+      source: "city",
+      salarySource: "numbeo",
+    })
+    expect(ranked.find((row) => row.city.id === "adjusted")).toMatchObject({
+      source: "city",
+      salarySource: "visitor",
+    })
+  })
+
   it("prices with the visitor salary for that city only", () => {
     const sample = city({ id: "demo", monthly_work_hours: 100, monthly_net_salary: 2000 })
     const baseline = evaluateBasket(sample, [{ item: ITEMS.coffee, quantity: 1 }])
@@ -184,6 +208,8 @@ describe("labor hours", () => {
     const other = ranked.find((row) => row.city.id === "other")
     expect(demo?.hourlyWage).toBe(80)
     expect(other?.hourlyWage).toBe(20)
+    expect(demo?.salarySource).toBe("visitor")
+    expect(other?.salarySource).toBe("numbeo")
   })
 
   it("drops a city with a missing salary or a non-positive price from the ranking", () => {
@@ -232,5 +258,69 @@ describe("labor hours", () => {
     const { ranked } = rankCities([expensive, cheap], [{ item: ITEMS.coffee, quantity: 1 }], {})
     expect(ranked.map((row) => row.city.id)).toEqual(["cheap", "expensive"])
     expect(ranked[0]!.hours).toBeLessThan(ranked[1]!.hours)
+  })
+})
+
+describe("catalog helpers", () => {
+  it("finds the canonical price and falls back to its imperial alias", () => {
+    const metricAndImperial = city({
+      id: "both",
+      prices: [
+        { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+        { category: "Markets", item: "Apples (1 kg)", price_usd: 2.27 },
+      ],
+    })
+    const imperialOnly = city({
+      id: "imperial",
+      prices: [{ category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 }],
+    })
+
+    expect(findPrice(metricAndImperial, "Apples (1 kg)")?.price_usd).toBe(2.27)
+    expect(findPrice(metricAndImperial, "Apples (1 lb)")?.price_usd).toBe(2.27)
+    expect(findPrice(imperialOnly, "Apples (1 kg)")?.price_usd).toBe(1.03)
+    expect(findPrice(imperialOnly, "Milk (Regular, 1 Liter)")).toBeUndefined()
+  })
+
+  it("builds a deduplicated catalog in first-seen order", () => {
+    const first = city({
+      id: "first",
+      prices: [
+        { category: "Restaurants", item: ITEMS.coffee, price_usd: 5 },
+        { category: "Markets", item: "Apples (1 lb)", price_usd: 1.03 },
+        { category: "Rent Per Month", item: ITEMS.rentOutside, price_usd: 900 },
+      ],
+    })
+    const second = city({
+      id: "second",
+      prices: [
+        { category: "Restaurants", item: ITEMS.coffee, price_usd: 4 },
+        { category: "Markets", item: "Apples (1 kg)", price_usd: 2.27 },
+        { category: "Transportation", item: ITEMS.transit, price_usd: 40 },
+      ],
+    })
+
+    expect(listCatalog([first, second])).toEqual([
+      { category: "Restaurants", item: ITEMS.coffee },
+      { category: "Markets", item: "Apples (1 kg)" },
+      { category: "Rent Per Month", item: ITEMS.rentOutside },
+      { category: "Transportation", item: ITEMS.transit },
+    ])
+  })
+
+  it("groups catalog entries by category and preserves their order", () => {
+    expect(
+      groupCatalog([
+        { category: "Restaurants", item: "coffee" },
+        { category: "Markets", item: "apples" },
+        { category: "Restaurants", item: "meal" },
+        { category: "Housing", item: "rent" },
+        { category: "Markets", item: "milk" },
+      ]),
+    ).toEqual([
+      { category: "Restaurants", items: ["coffee", "meal"] },
+      { category: "Markets", items: ["apples", "milk"] },
+      { category: "Housing", items: ["rent"] },
+    ])
+    expect(groupCatalog([])).toEqual([])
   })
 })

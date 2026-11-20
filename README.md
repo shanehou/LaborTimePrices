@@ -58,6 +58,20 @@ npm test
 
 Worker 测试使用 Node 自带的 `node --test`，不需要额外依赖；`worker/test/fixtures/` 里有一份裁剪过的真实 Numbeo 页面和几份边界样例。Worker 测试和 `node --test` 需要 Node 20+。
 
+### 浏览器端 E2E
+
+`web/e2e/` 里是 Playwright 测试，覆盖选城市、搜索与加载失败重试、对比表、排行、工时/收入覆盖、组合创建与删除、按城市融资设置、分享链接、CSV/图片导出和移动端布局。E2E 通过路由拦截提供固定城市数据，不需要启动 Worker，也不会访问 Numbeo。
+
+首次运行先安装浏览器：
+
+```bash
+cd web
+npx playwright install chromium
+npm run test:e2e
+```
+
+`npm run test:e2e` 会先对 E2E 代码做 TypeScript 检查，再自动构建并启动 `vite preview`。调试时可以用 `npm run test:e2e:ui`。
+
 ### 本地验收（可选）
 
 两个终端按上面的方式跑起来后，可以直接用 API 验一遍（冷城市会真的访问 Numbeo）：

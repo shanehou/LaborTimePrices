@@ -3,3 +3,7 @@ dist
 .wrangler
 .DS_Store
 .local-e2e/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
