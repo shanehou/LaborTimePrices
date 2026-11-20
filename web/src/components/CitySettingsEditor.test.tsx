@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { useState } from "react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { ITEMS } from "@/data/items"
 import type { CityRecord } from "@/lib/types"
 import { CitySettingsEditor } from "./CitySettingsEditor"
@@ -35,6 +36,80 @@ function renderEditor(props: {
     />,
   )
 }
+
+function SalaryHarness({
+  onSalaryChange,
+}: {
+  onSalaryChange?: (cityId: string, salaryUsd: number | null) => void
+}) {
+  const [salaryOverrides, setSalaryOverrides] = useState<Record<string, number>>({})
+  return (
+    <CitySettingsEditor
+      lang="zh"
+      cities={[alpha]}
+      hoursOverrides={{}}
+      salaryOverrides={salaryOverrides}
+      onHoursChange={() => {}}
+      onSalaryChange={(cityId, salaryUsd) => {
+        onSalaryChange?.(cityId, salaryUsd)
+        setSalaryOverrides((current) => {
+          const next = { ...current }
+          if (salaryUsd === null) delete next[cityId]
+          else next[cityId] = salaryUsd
+          return next
+        })
+      }}
+    />
+  )
+}
+
+function input(label: string): HTMLInputElement {
+  return screen.getByLabelText(label) as HTMLInputElement
+}
+
+describe("CitySettingsEditor income period", () => {
+  it("shows the same income as a monthly or yearly figure", () => {
+    render(<SalaryHarness />)
+
+    expect(input("Alpha 的税后月薪").value).toBe("3000")
+    fireEvent.click(screen.getByRole("radio", { name: "按年" }))
+    expect(input("Alpha 的税后年薪").value).toBe("36000")
+
+    fireEvent.click(screen.getByRole("radio", { name: "按月" }))
+    expect(input("Alpha 的税后月薪").value).toBe("3000")
+  })
+
+  it("stores a yearly income as the monthly equivalent", () => {
+    const onSalaryChange = vi.fn()
+    render(<SalaryHarness onSalaryChange={onSalaryChange} />)
+
+    fireEvent.click(screen.getByRole("radio", { name: "按年" }))
+    const field = input("Alpha 的税后年薪")
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: "48000" } })
+    fireEvent.blur(field)
+
+    expect(onSalaryChange).toHaveBeenLastCalledWith("alpha", 4000)
+    expect(screen.getByText("已按你的收入")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("radio", { name: "按月" }))
+    expect(input("Alpha 的税后月薪").value).toBe("4000")
+  })
+
+  it("treats the yearly default as the city value rather than an override", () => {
+    const onSalaryChange = vi.fn()
+    render(<SalaryHarness onSalaryChange={onSalaryChange} />)
+
+    fireEvent.click(screen.getByRole("radio", { name: "按年" }))
+    const field = input("Alpha 的税后年薪")
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: "30000" } })
+    expect(onSalaryChange).toHaveBeenLastCalledWith("alpha", 2500)
+
+    fireEvent.change(field, { target: { value: "36000" } })
+    expect(onSalaryChange).toHaveBeenLastCalledWith("alpha", null)
+  })
+})
 
 describe("CitySettingsEditor source labels", () => {
   it("marks visitor hours and salary overrides", () => {

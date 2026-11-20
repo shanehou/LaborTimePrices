@@ -73,6 +73,23 @@ test.describe("core comparison flow", () => {
     await expect(reloadedRanking.getByText("已按你的收入")).toBeVisible()
   })
 
+  test("accepts an annual income and keeps it as a monthly override", async ({ page }) => {
+    await openApp(page)
+    await selectCity(page, "Shanghai")
+
+    await page.getByRole("radio", { name: "按年" }).click()
+    const annual = page.getByLabel("Shanghai 的税后年薪")
+    await expect(annual).toHaveValue("36000")
+
+    await annual.fill("72000")
+    await annual.press("Tab")
+    await waitForShareParam(page, "sa", "1:6000")
+    await expect(rankingSection(page).getByText("已按你的收入")).toBeVisible()
+
+    await page.getByRole("radio", { name: "按月" }).click()
+    await expect(page.getByLabel("Shanghai 的税后月薪")).toHaveValue("6000")
+  })
+
   test("compares cities, shows deltas, and changes the baseline", async ({ page }) => {
     await openApp(page)
     await selectCities(page, ["Shanghai", "Zurich"])

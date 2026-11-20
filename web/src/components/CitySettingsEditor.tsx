@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { DEFAULT_MONTHLY_HOURS, resolveMonthlyHours, resolveMonthlyNetSalary } from "@/lib/labor"
 import { formatMessage, exclusionMessage, t, type Lang } from "@/i18n"
 import { formatMoney, formatPlain } from "@/lib/format"
@@ -81,6 +82,15 @@ function displayRate(money: MoneyFormat): number {
   return Number.isFinite(money.rate) && money.rate > 0 ? money.rate : 1
 }
 
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/** Annual input is a convenience; overrides are always stored as monthly USD. */
+type SalaryPeriod = "month" | "year"
+
+const MONTHS_PER_YEAR = 12
+
 function CitySettingsField({
   lang,
   city,
@@ -103,8 +113,10 @@ function CitySettingsField({
   const shownHours = displayedHours(city, hoursOverride)
   const rate = displayRate(money)
   const shownSalaryUsd = resolvedSalary.ok ? resolvedSalary.salary : null
+  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>("month")
+  const salaryMonths = salaryPeriod === "year" ? MONTHS_PER_YEAR : 1
   const shownSalary =
-    shownSalaryUsd === null ? null : Math.round(shownSalaryUsd * rate * 100) / 100
+    shownSalaryUsd === null ? null : roundMoney(shownSalaryUsd * rate * salaryMonths)
 
   const [hoursDraft, setHoursDraft] = useState(() => String(shownHours))
   const [hoursFocused, setHoursFocused] = useState(false)
@@ -138,7 +150,7 @@ function CitySettingsField({
     }
     const value = Number(trimmed)
     if (!Number.isFinite(value) || value <= 0) return
-    let usd = value / rate
+    let usd = value / (rate * salaryMonths)
     usd = Math.round(usd * 100) / 100
     const baseline = city.monthly_net_salary
     // Round-tripping through the display rate can leave noise; matching the
@@ -220,15 +232,35 @@ function CitySettingsField({
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex min-w-0 flex-1 flex-col gap-1 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              {t(lang, "salaryLabel")}
+          <div className="flex min-w-0 flex-1 flex-col gap-1 text-[10px] text-muted-foreground">
+            <span className="flex flex-wrap items-center gap-1.5">
+              {t(lang, salaryPeriod === "year" ? "salaryLabelAnnual" : "salaryLabel")}
               <Badge
                 variant={resolvedSalary.ok && resolvedSalary.source === "visitor" ? "default" : "outline"}
                 className="text-[10px]"
               >
                 {salaryLabel}
               </Badge>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={salaryPeriod}
+                aria-label={formatMessage(t(lang, "salaryPeriodLabel"), { city: city.name })}
+                className="ml-auto"
+                onValueChange={(next) => {
+                  if (next !== "month" && next !== "year") return
+                  setSalaryPeriod(next)
+                  setSalaryFocused(false)
+                }}
+              >
+                <ToggleGroupItem value="month" className="h-6 px-1.5 text-[10px]">
+                  {t(lang, "salaryMonthly")}
+                </ToggleGroupItem>
+                <ToggleGroupItem value="year" className="h-6 px-1.5 text-[10px]">
+                  {t(lang, "salaryYearly")}
+                </ToggleGroupItem>
+              </ToggleGroup>
             </span>
             <Input
               type="number"
@@ -236,7 +268,10 @@ function CitySettingsField({
               step="any"
               inputMode="decimal"
               value={salaryValue}
-              aria-label={formatMessage(t(lang, "salaryInput"), { city: city.name })}
+              aria-label={formatMessage(
+                t(lang, salaryPeriod === "year" ? "salaryInputAnnual" : "salaryInput"),
+                { city: city.name },
+              )}
               onFocus={() => {
                 setSalaryDraft(shownSalary === null ? "" : String(shownSalary))
                 setSalaryFocused(true)
@@ -250,7 +285,7 @@ function CitySettingsField({
                 commitSalary(event.target.value)
               }}
             />
-          </label>
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -260,7 +295,7 @@ function CitySettingsField({
               setSalaryDraft(
                 baseline === null || !(baseline > 0)
                   ? ""
-                  : String(Math.round(baseline * rate * 100) / 100),
+                  : String(roundMoney(baseline * rate * salaryMonths)),
               )
               setSalaryFocused(false)
             }}
