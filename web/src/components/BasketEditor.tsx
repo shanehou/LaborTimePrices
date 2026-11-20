@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react"
 import { CityUsageDialog, type UsageOverridePatch } from "@/components/CityUsageDialog"
+import { NumberField } from "@/components/NumberField"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -17,51 +17,6 @@ import {
 } from "@/lib/period"
 import type { CustomBasket } from "@/lib/rankTarget"
 import type { CityRecord } from "@/lib/types"
-
-function RateField({
-  value,
-  label,
-  onValue,
-}: {
-  value: number | undefined
-  label: string
-  onValue: (value: number | undefined) => void
-}) {
-  const [text, setText] = useState(value === undefined ? "" : String(value))
-  const focused = useRef(false)
-
-  useEffect(() => {
-    if (focused.current) return
-    setText(value === undefined ? "" : String(value))
-  }, [value])
-
-  return (
-    <Input
-      className="w-24"
-      type="text"
-      inputMode="decimal"
-      aria-label={label}
-      value={text}
-      onFocus={() => {
-        focused.current = true
-      }}
-      onBlur={() => {
-        focused.current = false
-        setText(value === undefined ? "" : String(value))
-      }}
-      onChange={(event) => {
-        const next = event.target.value
-        setText(next)
-        if (next.trim() === "") {
-          onValue(undefined)
-          return
-        }
-        const parsed = Number(next)
-        if (Number.isFinite(parsed) && parsed > 0) onValue(parsed)
-      }}
-    />
-  )
-}
 
 function quantityKey(item: string, horizon: Horizon, imperialArea: boolean): MessageKey {
   if (horizon === "listed") return "basketQty"
@@ -194,28 +149,18 @@ export function BasketEditor({
                         <>
                           <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
                             {t(lang, "usageYears")}
-                            <Input
+                            <NumberField
                               className="w-24"
-                              type="number"
-                              min={0}
-                              step={1}
-                              inputMode="decimal"
-                              value={usage.years[item] ?? DEFAULT_PURCHASE_YEARS}
-                              aria-label={formatMessage(t(lang, "basketYears"), { item: named })}
-                              onChange={(event) => {
-                                const next = event.target.value
-                                if (next.trim() === "") {
-                                  onYears(item, undefined)
-                                  return
-                                }
-                                const parsed = Number(next)
-                                if (Number.isFinite(parsed) && parsed > 0) onYears(item, parsed)
-                              }}
+                              value={usage.years[item]}
+                              placeholder={String(DEFAULT_PURCHASE_YEARS)}
+                              label={formatMessage(t(lang, "basketYears"), { item: named })}
+                              onValue={(years) => onYears(item, years)}
                             />
                           </label>
                           <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
                             {t(lang, "usageRate")}
-                            <RateField
+                            <NumberField
+                              className="w-24"
                               value={usage.rates[item]}
                               label={formatMessage(t(lang, "basketRate"), { item: named })}
                               onValue={(rate) => onRate(item, rate)}

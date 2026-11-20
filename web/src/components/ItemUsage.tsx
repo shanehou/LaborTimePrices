@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
+import { NumberField } from "@/components/NumberField"
 import { cadenceOf } from "@/data/cadence"
 import { showsImperialArea, type PriceSample } from "@/data/measure"
 import { exclusionMessage, formatMessage, labelItem, t, type Lang } from "@/i18n"
@@ -23,39 +22,7 @@ function UsageNumber({
   label: string
   onValue: (value: number | undefined) => void
 }) {
-  const [text, setText] = useState(value === undefined ? "" : String(value))
-  const focused = useRef(false)
-
-  useEffect(() => {
-    if (focused.current) return
-    setText(value === undefined ? "" : String(value))
-  }, [value])
-
-  return (
-    <Input
-      className="h-7 w-20 text-xs"
-      inputMode="decimal"
-      aria-label={label}
-      value={text}
-      onFocus={() => {
-        focused.current = true
-      }}
-      onBlur={() => {
-        focused.current = false
-        setText(value === undefined ? "" : String(value))
-      }}
-      onChange={(event) => {
-        const next = event.target.value
-        setText(next)
-        if (next.trim() === "") {
-          onValue(undefined)
-          return
-        }
-        const parsed = Number(next)
-        if (Number.isFinite(parsed) && parsed > 0) onValue(parsed)
-      }}
-    />
-  )
+  return <NumberField className="h-7 w-20 text-xs" value={value} label={label} onValue={onValue} />
 }
 
 export function ItemUsage({

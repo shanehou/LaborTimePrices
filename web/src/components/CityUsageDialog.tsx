@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { NumberField } from "@/components/NumberField"
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -38,54 +37,6 @@ export type UsageOverridePatch = {
   years?: number | null
   rate?: number | null
   repayment?: Repayment | null
-}
-
-function OverrideNumber({
-  value,
-  placeholder,
-  label,
-  onValue,
-}: {
-  value: number | undefined
-  placeholder: string
-  label: string
-  onValue: (value: number | undefined) => void
-}) {
-  const [text, setText] = useState(value === undefined ? "" : String(value))
-  const focused = useRef(false)
-
-  useEffect(() => {
-    if (focused.current) return
-    setText(value === undefined ? "" : String(value))
-  }, [value])
-
-  return (
-    <Input
-      className="h-8 w-20 text-xs"
-      type="text"
-      inputMode="decimal"
-      placeholder={placeholder}
-      aria-label={label}
-      value={text}
-      onFocus={() => {
-        focused.current = true
-      }}
-      onBlur={() => {
-        focused.current = false
-        setText(value === undefined ? "" : String(value))
-      }}
-      onChange={(event) => {
-        const next = event.target.value
-        setText(next)
-        if (next.trim() === "") {
-          onValue(undefined)
-          return
-        }
-        const parsed = Number(next)
-        if (Number.isFinite(parsed) && parsed > 0) onValue(parsed)
-      }}
-    />
-  )
 }
 
 export function CityUsageDialog({
@@ -169,7 +120,8 @@ export function CityUsageDialog({
                     </TableCell>
                     {showArea && (
                       <TableCell>
-                        <OverrideNumber
+                        <NumberField
+                          className="h-8 w-20 text-xs"
                           value={perCity.area}
                           placeholder={
                             sharedArea !== undefined && Number.isFinite(sharedArea) && sharedArea > 0
@@ -182,7 +134,8 @@ export function CityUsageDialog({
                       </TableCell>
                     )}
                     <TableCell>
-                      <OverrideNumber
+                      <NumberField
+                        className="h-8 w-20 text-xs"
                         value={perCity.years}
                         placeholder={String(financing.years)}
                         label={formatMessage(t(lang, "basketYears"), { item: named })}
@@ -190,7 +143,8 @@ export function CityUsageDialog({
                       />
                     </TableCell>
                     <TableCell>
-                      <OverrideNumber
+                      <NumberField
+                        className="h-8 w-20 text-xs"
                         value={perCity.rate}
                         placeholder={
                           financing.rate !== undefined ? String(financing.rate) : "—"

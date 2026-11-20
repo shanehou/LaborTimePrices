@@ -85,6 +85,39 @@ test.describe("combo flow", () => {
     await expect(page.getByText("至少勾选一项。")).toBeVisible()
   })
 
+  test("fills and clears a purchase's shared amortization", async ({ page }) => {
+    await openApp(page)
+    await selectCity(page, "Shanghai")
+    await openCombosTab(page)
+
+    await page.getByRole("button", { name: "新建组合" }).click()
+    await page
+      .getByRole("checkbox", { name: "大众高尔夫 1.5（或同类新紧凑型车）" })
+      .check()
+    await page.getByText("折合每月", { exact: true }).click()
+
+    const years = page.getByLabel(/大众高尔夫 1\.5（或同类新紧凑型车）\s*的摊销年数/)
+    await expect(years).toHaveValue("")
+    await expect(years).toHaveAttribute("placeholder", "10")
+
+    await years.fill("5")
+    await expect(years).toHaveValue("5")
+
+    await years.fill("")
+    await expect(years).toHaveValue("")
+    await expect(years).toHaveAttribute("placeholder", "10")
+    await years.press("Tab")
+    await expect(years).toHaveValue("")
+    await expect(years).toHaveAttribute("placeholder", "10")
+
+    const rate = page.getByLabel(/大众高尔夫 1\.5（或同类新紧凑型车）\s*的年利率/)
+    await rate.fill("3.5")
+    await expect(rate).toHaveValue("3.5")
+    await rate.fill("")
+    await rate.press("Tab")
+    await expect(rate).toHaveValue("")
+  })
+
   test("stores a per-city financing override for a purchase", async ({ page }) => {
     await openApp(page)
     await selectCities(page, ["Shanghai", "Zurich"])
@@ -117,5 +150,33 @@ test.describe("combo flow", () => {
     await waitForShareParam(page, "yc", "32:1:5")
     await page.reload()
     await expect(page.getByText("已单独设置 1 城")).toBeVisible()
+
+    await page.getByRole("button", { name: /按城市/ }).click()
+    const reopened = page.getByRole("dialog")
+    const reopenedRow = reopened.locator("tbody tr").filter({ hasText: "Shanghai" })
+    const cityYears = reopenedRow.getByLabel(
+      /大众高尔夫 1\.5（或同类新紧凑型车）\s*的摊销年数/,
+    )
+    await expect(cityYears).toHaveValue("5")
+
+    await cityYears.fill("")
+    await cityYears.press("Tab")
+    await expect(cityYears).toHaveValue("")
+    await expect(cityYears).toHaveAttribute("placeholder", "10")
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const raw = localStorage.getItem("ltp.usageOverrides")
+          if (!raw) return null
+          const stored = JSON.parse(raw) as {
+            years: Record<string, Record<string, number>>
+          }
+          return (
+            stored.years["Volkswagen Golf 1.5 (or Equivalent New Compact Car)"]?.["1"] ?? null
+          )
+        }),
+      )
+      .toBeNull()
+    await page.keyboard.press("Escape")
   })
 })
